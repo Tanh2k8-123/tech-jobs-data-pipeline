@@ -1,28 +1,23 @@
 # Repository structure
 
 ```text
-sea-it-jobs-pipeline/
-├── src/sea_it_jobs/       # CLI, HTTP, real-source adapter, parser, ingestion, and SDK
-│   └── sources/          # Verified ITviec adapter
-├── notebooks/            # Databricks extraction and PySpark Bronze entry points
-├── dbt/
-│   ├── models/staging/   # Bronze contracts, types, FX, and observation history
-│   ├── models/intermediate/ # Current records and skill/city normalization
-│   ├── models/marts/     # Dimensions, facts, bridges, and reports
-│   ├── macros/           # Schema naming and surrogate keys
-│   ├── seeds/            # Controlled alias mappings
-│   └── tests/            # Cloud SQL business/data checks
-├── infra/terraform/      # Workspace resources and provider lock
-├── dashboards/           # Deployed AI/BI dashboard template
-├── scripts/              # Dashboard generation and Terraform/GitHub configuration
-├── tests/                # Unit, raw-integrity, and SQL semantic tests
-├── docs/                 # Architecture, contracts, dictionary, operations, and learning
-├── .github/workflows/    # CI and scheduled Databricks Job submission/waiting
-├── artifacts/            # Real raw files, logs, plans, and tools; excluded from Git
-├── .env                  # Private local configuration; excluded from Git
-├── pyproject.toml
-├── uv.lock
-└── Makefile
+src/sea_it_jobs/       # Python code: source, parser, files, and Job commands
+notebooks/            # Databricks entry points
+dbt/                  # SQL models, mappings, and data tests
+infra/terraform/      # Workspace setup
+dashboards/           # Dashboard template
+scripts/              # Deployment and setup helpers
+tests/                # Python and SQL tests
+docs/                 # Project notes and instructions
+.github/workflows/    # CI and daily schedule
 ```
 
-Source extraction, uploads, and transformations have separate responsibilities rather than being combined into one script. Notebooks act as execution entry points; salary business logic and dashboard generation live in their respective modules. Aggregations belong in marts and source-specific parsing belongs in adapters. Test fixtures support validation and have no production ingestion path.
+Inside `dbt/`:
+
+- `models/staging/`: read Bronze and set types.
+- `models/intermediate/`: choose current records and normalize skills/cities.
+- `models/marts/`: build fact, dimension, bridge, and report tables.
+- `seeds/`: city and skill aliases.
+- `tests/`: data checks.
+
+`pyproject.toml` lists Python dependencies; `uv.lock` pins them. `.terraform.lock.hcl` pins the provider. Local raw files, logs, plans, `.env`, and Terraform state are excluded from Git.

@@ -1,31 +1,34 @@
-# Data dictionary
+# Tables and fields
 
-| Relation | Grain and purpose |
+## Tables
+
+| Table | One row means |
 |---|---|
-| Bronze `raw_it_job_observations` | One observation per source + source_job_id + run_id; preserves source payload and parser results |
-| Bronze `ingestion_runs` | One run with a completed Bronze load |
-| Silver `stg_job_history` | Valid observation history joined to the completion ledger; casts types, converts FX, and parses arrays |
-| Silver `int_jobs_current` | Latest observation per source posting, with first_seen_at/last_seen_at |
-| Gold `fct_job_postings` | One observed source posting, with its latest-snapshot presence flag |
-| Gold `dim_companies` | One company identity within a source; no automatic cross-source entity resolution |
-| Gold `dim_skills` | One normalized skill name |
-| Gold `bridge_job_skills` | One unique posting–skill pair |
-| Gold `bridge_job_cities` | One unique posting–city pair |
-| Gold `mart_skill_demand` | One skill, measured over each source's latest complete snapshot |
-| Gold `mart_daily_city_jobs` | One posting-date–city combination, measured over all observed postings |
-| Gold `audit_data_quality` | One source, with missing-data and freshness metrics |
+| `raw_it_job_observations` | One source post observed in one batch |
+| `ingestion_runs` | One completed Bronze load |
+| `stg_job_history` | One valid observation with typed fields and converted salary bounds |
+| `int_jobs_current` | The latest observation of one post |
+| `fct_job_postings` | One post with its current values |
+| `dim_companies` | One company ID within a source |
+| `dim_skills` | One normalized skill |
+| `bridge_job_skills` | One post–skill pair |
+| `bridge_job_cities` | One post–city pair |
+| `mart_skill_demand` | One skill with posting and salary counts |
+| `mart_daily_city_jobs` | One publication date and city |
+| `audit_data_quality` | One source with quality counts |
 
-## Important fields
+## Fields to know
 
-- `job_sk`: SHA-256 of the source and posting ID, using length prefixes to avoid ambiguous concatenations.
-- `posted_date`: the publication date supplied by the source. Missing dates are excluded from the posting-date chart and counted in the audit table.
-- `snapshot_date`: the Vietnam calendar date of collection. `ingested_at`, `first_seen_at`, `last_seen_at`, and `fx_rate_at` represent UTC timestamps.
-- `observed_in_latest_snapshot`: present in the source's latest complete run. It is not named `is_open` because presence/absence alone does not establish opening or closing status.
-- `min_salary_usd`, `max_salary_usd`: known monthly bounds in USD; either may be NULL.
-- `avg_salary_usd`: midpoint when both bounds are known; NULL for one-sided or undisclosed salaries.
-- `salary_sample_count`: postings with a valid salary midpoint in the skill group.
-- `salary_coverage`: midpoint sample count / posting count in the skill group. It is not an estimate of salary disclosure across the entire market.
-- `salary_basis`: `unknown` unless the source establishes gross/net treatment.
-- `city_name`: Ha Noi / Ho Chi Minh / Da Nang / Other. A posting may have multiple values through the bridge.
+- `job_sk`: a stable hash of the source and post ID.
+- `posted_date`: the date given by the website.
+- `snapshot_date`: the Vietnam date when the batch was collected.
+- `first_seen_at` / `last_seen_at`: the first/latest observation times, in UTC.
+- `observed_in_latest_snapshot`: present in the source's latest complete batch. It does not prove the job is still open.
+- `min_salary_usd` / `max_salary_usd`: known monthly salary bounds.
+- `avg_salary_usd`: midpoint when both bounds are known.
+- `salary_sample_count`: posts with a valid midpoint.
+- `salary_coverage`: salary sample count divided by posting count.
+- `salary_basis`: `unknown` unless gross/net is stated.
+- `city_name`: Ha Noi, Ho Chi Minh, Da Nang, or Other.
 
-Skills absent from the alias seed retain a lowercase name rather than being assigned an inferred taxonomy. Add mappings only with supporting evidence and keep aliases unique. Vietnamese source aliases in seeds are intentional input data; normalized outputs and repository documentation use English.
+Unmapped skills stay lowercase. Vietnamese aliases in seeds are source inputs. Company IDs from different sources are not automatically merged.

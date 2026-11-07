@@ -1,27 +1,74 @@
-# Operations runbook
+# Run the project
 
-## Connection checks
+## 1. Set up
 
-Run `uv run it-jobs check` from the repository root. The CLI loads `.env`, checks the current user, warehouse, and catalog, and executes SELECT 1 without printing credentials. For WSL OAuth, keep the selected profile signed in and the Databricks CLI available at `/usr/local/bin/databricks`. Select an HTTP path explicitly when multiple warehouses exist. With a single warehouse, the CLI can discover it and append its non-secret HTTP path to an existing `.env` file.
+For a new checkout:
 
-## Deployment
+```powershell
+uv sync --locked --extra dev
+Copy-Item .env.example .env
+```
 
-Run `uv run python scripts/deploy.py` to inspect a plan, then `uv run python scripts/deploy.py --apply`. Preserve `infra/terraform/terraform.tfstate`; keep state and plans out of Git. Terraform receives an ephemeral OAuth bearer token through its process environment, not a token file. The dashboard is created inside the workspace, is not shared publicly, and does not embed credentials.
+Fill in the host, token, and SQL HTTP path in `.env`. Use `workspace` as the catalog and `vn_jobs` as the schema prefix unless you choose others.
 
-Read `job_id` from Terraform outputs. `uv run it-jobs run --job-id ID` starts the complete real-source DAG on Databricks and waits for completion. An empty Job `input_path` requests a new extraction; Bronze receives a concrete `raw_path` through a task value. Replay supplies an existing path and skips fresh extraction.
+For OAuth in WSL, use `DATABRICKS_WSL_PROFILE=your-profile` with the host and HTTP path. On Windows, this uses the CLI at `/usr/local/bin/databricks` inside WSL.
 
-## Recovery and backfills
+## 2. Deploy and run
 
-- **Extraction fails before its manifest:** the batch is incomplete and must not enter Bronze. Inspect source availability, robots.txt, pagination, JSON-LD, and logs before rerunning extraction.
-- **Upload is interrupted:** replay the exact saved raw directory. Existing files must match their checksums and are never overwritten with different content.
-- **Spark fails:** retry the same batch. Observation and ledger MERGEs are idempotent.
-- **dbt fails:** inspect the failed model/test in the Job, deploy the fix, and replay the batch. Dashboard refresh must not proceed after a failed build.
-- **Extraction already succeeded:** use `it-jobs repair --job-id ID --run-id RUN_ID` or the workflow's `repair_run_id` input to rerun failed tasks and their dependents. Give task-value-derived inputs distinct names so automatic Job-parameter propagation cannot overwrite them.
-- **The source hides salaries:** NULL results and a coverage warning are expected. Do not replace missing values with zero or invent samples to suppress the warning.
-- **Historical backfill:** replay preserved raw runs. Rebuilding a workspace entirely from old batches triggers the freshness check by design; collect a current snapshot before publishing a current dashboard.
+```powershell
+uv run it-jobs check
+uv run python scripts/deploy.py
+uv run python scripts/deploy.py --apply
+uv run it-jobs run --job-id YOUR_JOB_ID
+```
 
-## Monitoring
+`check` tests the connection. The first deployment command shows a plan; `--apply` creates or updates resources. Take the Job ID from its output.
 
-Monitor posting/page counts, last update time, salary coverage, parse failures, and missing publication dates. The latest snapshot does not establish opening or closing status. The time series does not reconstruct all hiring activity before the pipeline began observing the source.
+Keep the Terraform state file. Do not commit state, plans, tokens, or raw data.
 
-The GitHub workflow has a 150-minute timeout, concurrency control, and seven-day failure-log retention. Do not publish raw Parquet/FX responses as workflow artifacts. Check Databricks quotas before increasing frequency. Monitor raw storage; no automatic deletion task is configured.
+## 3. Set up GitHub
+
+Add repository Secrets: `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_HTTP_PATH`.
+
+Add Variables: `PIPELINE_JOB_ID`, `DATABRICKS_CATALOG`, `SCHEMA_PREFIX`. Run **Daily Vietnam IT jobs** manually, then set `ENABLE_DAILY_PIPELINE=true`.
+
+The schedule is `01:00 UTC` / `08:00` Vietnam time. GitHub may start it late.
+
+Optional setup helper:
+
+```powershell
+uv run python scripts/configure_github.py --repo OWNER/REPO --job-id YOUR_JOB_ID
+```
+
+This keeps an existing token secret or creates a 90-day PAT. It sends the token straight to GitHub Secrets and leaves the schedule disabled until you verify a run. The token created for this deployment expires on **5 February 2027**.
+
+## 4. Recover a failed run
+
+If extraction succeeded, repair the failed tasks and their dependents:
+
+```powershell
+uv run it-jobs repair --job-id YOUR_JOB_ID --run-id FAILED_RUN_ID
+```
+
+The manual GitHub workflow also accepts `repair_run_id`. Leave it empty for fresh collection.
+
+To collect locally and replay a saved batch:
+
+```powershell
+uv run it-jobs extract
+uv run it-jobs replay --input artifacts/landing/YYYY-MM-DD/RUN_ID --job-id YOUR_JOB_ID
+```
+
+Replay keeps the original batch date. Do not label today's data as a historical snapshot.
+
+## If something goes wrong
+
+| Problem | What to check |
+|---|---|
+| Source error | Website access, page structure, and extraction logs |
+| Upload/Spark error | Saved batch path, checksum, and row count; retry the same batch |
+| dbt error | Failed model/test; deploy the fix, then repair or replay |
+| Missing salaries | NULL and a coverage warning are expected |
+| Stale data | Check the latest successful run; collect a fresh snapshot |
+
+Dashboard refresh stops after a failed build. Monitor posting counts, update times, missing dates, salary coverage, storage, and Databricks quotas. GitHub keeps failure logs for seven days. Raw data has no automatic cleanup.
