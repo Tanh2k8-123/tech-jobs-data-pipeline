@@ -1,3 +1,4 @@
+import logging
 import time
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -43,6 +44,13 @@ class HttpClient:
         time.sleep(max(0, self.delay - (time.monotonic() - self.last_request)))
         self.last_request = time.monotonic()
         response = self.session.get(url, timeout=(10, 45), allow_redirects=True)
+        if response.status_code >= 400:
+            logging.getLogger(__name__).error(
+                "source_http_error status=%s host=%s path=%s",
+                response.status_code,
+                parsed.netloc,
+                parsed.path,
+            )
         response.raise_for_status()
         if urlparse(response.url).netloc != parsed.netloc:
             raise ValueError("Unexpected cross-host redirect")
