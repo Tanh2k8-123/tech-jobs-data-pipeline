@@ -1,20 +1,20 @@
-# Kiến trúc và quyết định thiết kế
+# Architecture and design decisions
 
-## Ranh giới trách nhiệm
+## Responsibilities
 
-`src/sea_it_jobs/sources/itviec.py` là adapter đã kiểm chứng. HTTP client quản lý robots.txt, khoảng cách request, retry 429/5xx và timeout. Parser nguồn không xử lý FX hoặc tạo surrogate key. `salary.py` chỉ phân tích cú pháp, giữ nguyên cận chưa biết và trả trạng thái khi không thể diễn giải an toàn. Raw payload luôn đi kèm kết quả parser để có thể kiểm tra lại.
+`src/sea_it_jobs/sources/itviec.py` is the verified source adapter. The HTTP client handles robots.txt, request spacing, 429/5xx retries, and timeouts. The source adapter does not perform FX conversion or generate surrogate keys. `salary.py` parses salary syntax, preserves unknown bounds, and returns an explicit status when interpretation is unsafe. Raw source payloads are preserved alongside parser results.
 
-`ingestion.py` hoàn tất snapshot nguồn, lấy tỷ giá thực và ghi Parquet với schema tường minh, kể cả khi cả cột lương đều rỗng. Notebook `00_extract_source.py` chạy package này trên driver Databricks và truyền đường dẫn raw bằng task value. `01_load_bronze.py` độc lập với package Python, chỉ nạp và kiểm tra Bronze. dbt quản lý Silver/Gold và các kiểm thử phân tích. `cloud.py` kích hoạt/chờ Job; với replay từ máy local, module này xác minh checksum và upload bất biến trước khi chạy.
+`ingestion.py` completes the source snapshot, fetches real FX data, and writes Parquet with an explicit schema, including columns that are entirely NULL. `00_extract_source.py` runs the package on the Databricks driver and passes the raw path through a task value. `01_load_bronze.py` is independent of the Python package and validates/loads Bronze. dbt owns Silver, Gold, and analytical tests. `cloud.py` submits and waits for Jobs; local replay additionally verifies checksums and uploads immutable files.
 
-## Lịch sử và chạy lại
+## History and replay
 
-Khóa tin là `(source, source_job_id)`. Khóa quan sát Bronze là `(source, source_job_id, run_id)`. Khóa này giữ được nhiều phiên bản trong cùng ngày và lịch sử qua nhiều ngày; không đồng nhất idempotency với việc ghi đè một dòng hiện tại.
+The posting identity is `(source, source_job_id)`. The Bronze observation identity is `(source, source_job_id, run_id)`. This preserves multiple observations within a day and across days; idempotency does not require overwriting a single current-state record.
 
-Raw và quan sát Bronze bất biến. Hai lần replay cùng batch có thể tạo hai Job runs nhưng vẫn cùng số quan sát Bronze. Một run chưa hoàn tất MERGE sẽ không có ledger; staging join ledger nên loại các quan sát mồ côi. Mỗi MERGE Delta là giao dịch riêng; notebook có thể retry sau sự cố giữa MERGE và ledger.
+Raw batches and Bronze observations are immutable. Two replays of the same batch may create separate Job executions while preserving the same Bronze row count. An interrupted observation merge has no completed ledger entry, so staging excludes orphan observations. Each Delta MERGE is a separate transaction; notebook retries can complete the ledger after a failure between the merge and ledger write.
 
-`first_seen_at` là thời điểm pipeline bắt đầu quan sát tin; `posted_date` là ngày đăng trong JobPosting JSON-LD; `last_seen_at` là thời điểm quan sát gần nhất. Không thay thế âm thầm trường này bằng trường khác. `observed_in_latest_snapshot` so sánh `run_id` với run đầy đủ gần nhất theo nguồn, bao gồm trường hợp crawl lại trong cùng ngày. Tin không xuất hiện không tự được kết luận là đã đóng.
+`first_seen_at` is the first observation recorded by the pipeline, `posted_date` comes from the source JobPosting JSON-LD, and `last_seen_at` is the latest observation. These fields are not silently substituted for one another. `observed_in_latest_snapshot` compares the posting's batch `run_id` with the latest complete run for its source, including repeated collections on the same day. Absence from a snapshot is not treated as proof that a job closed.
 
-## Mô hình dữ liệu
+## Analytical model
 
 ```mermaid
 erDiagram
@@ -24,22 +24,22 @@ erDiagram
     fct_job_postings ||--o{ bridge_job_cities : job_sk
 ```
 
-Fact có một dòng hiện tại mỗi tin đã từng quan sát. Dimension công ty chứa thuộc tính công ty, không trộn số tin hoặc lương trung bình vào dimension. Bridge kỹ năng duy nhất theo `(job_sk, skill_sk)`; bridge thành phố duy nhất theo `(job_sk, city_name)`. Không tự gộp hai tin ở hai website thành một thực thể; entity resolution là bước mở rộng cần quy tắc riêng.
+The fact contains one current record for each observed source posting. Company dimensions contain descriptive attributes rather than aggregates such as posting counts or average salaries. The skill bridge is unique by `(job_sk, skill_sk)`; the city bridge is unique by `(job_sk, city_name)`. Posting identities from different sites are not automatically merged: entity resolution would need its own rules.
 
-MVP không cần microservices, Kafka, Kubernetes, Airflow riêng hay dimension ngày. GitHub Actions khởi động và chờ Databricks; Databricks sở hữu toàn bộ DAG, kể cả ingestion. Kiểm chứng thực tế cho thấy runner GitHub không truy cập được nguồn, còn workspace Databricks trả 200 cho ITviec/FX; do đó nguồn được thu thập trong serverless. Terraform chỉ quản lý tài nguyên workspace đã tồn tại, không tạo account hoặc cloud workspace Free Edition.
+The MVP does not need separate microservices, Kafka, Kubernetes, Airflow, or a date dimension. GitHub Actions triggers and waits for Databricks, which owns the complete DAG, including ingestion. During verification, the GitHub runner could not access the source, whereas the Databricks workspace returned HTTP 200 for ITviec and FX. Ingestion therefore runs on serverless compute. Terraform manages objects in an existing workspace; it does not create an account or provision a Free Edition cloud workspace.
 
-## Lương và tỷ giá
+## Salary and FX semantics
 
-- `Up to` chỉ có cận trên; `From` chỉ có cận dưới. Không suy ra cận còn lại.
-- Lương ẩn/thỏa thuận là NULL; biểu thức lạ là `unsupported`, không đoán bằng cách lấy con số đầu tiên.
-- Chỉ đơn vị tháng, tiền tệ USD/VND và trạng thái `parsed` được quy đổi sang USD/tháng. Lương năm/giờ được giữ nguyên native, chưa đưa vào trung bình tháng.
-- Lương khoảng hoặc cố định có hai cận mới được tính midpoint. Đây là lương quảng cáo, không phải lương thực nhận hay tác động nhân quả của một kỹ năng.
-- Tỷ giá gắn với lần quan sát và được lưu cùng raw; replay không dùng tỷ giá hôm nay. Thiếu hoặc cũ quá 48 giờ làm run thất bại.
+- `Up to` provides an upper bound; `From` provides a lower bound. Unknown bounds remain NULL.
+- Hidden or negotiable salaries remain NULL. Unrecognized expressions are `unsupported`; the parser does not guess by taking the first number.
+- Only monthly USD/VND amounts with `parsed` status are converted to USD per month. Annual/hourly values remain available in their native form and are excluded from monthly averages.
+- A midpoint is calculated only when both bounds are known, including fixed salaries. This represents an advertised salary estimate, not actual compensation or a causal return to a particular skill.
+- The FX observation is preserved with its provider timestamp and raw batch. Replay does not substitute today's rate. Missing FX or rates older than 48 hours fail extraction.
 
-## Hiệu năng, giới hạn và vận hành
+## Performance and operating limits
 
-Khởi đầu bằng full rebuild Gold: vài trăm đến vài nghìn tin không cần logic incremental phức tạp. Lịch sử bất biến ở Bronze cho phép chuyển sang incremental sau này. Fact có thể dùng Liquid Clustering theo `posted_date`; không partition mỗi ngày và không thêm nhiều khóa khi chưa có query profile chứng minh lợi ích.
+Gold starts with full rebuilds: hundreds or thousands of postings do not justify complex incremental logic. Immutable Bronze history provides a migration path to incremental models later. The fact can use Liquid Clustering on `posted_date`; daily partitioning and additional clustering keys should not be added without supporting query profiles.
 
-Refresh dashboard phụ thuộc dbt build thành công. dbt không cung cấp giao dịch nguyên tử cho toàn bộ nhiều bảng Gold: trong lúc rebuild, truy vấn trực tiếp có thể thấy các bảng ở các thời điểm khác nhau. Với đồ án dùng dashboard cache và một lượt chạy, đây là giới hạn được chấp nhận. Nếu cần SLA/đọc nhất quán, triển khai candidate schema, validation rồi chuyển các view xuất bản theo batch và dùng nền tảng có SLA.
+Dashboard refresh depends on a successful dbt build. dbt does not provide one atomic transaction across every Gold table: direct queries during a rebuild can see tables from different points in the build. For this learning project, cached dashboard results and serialized runs are an accepted limit. Stronger consistency would require candidate schemas, validation, publication views switched by batch, and a platform with a suitable SLA.
 
-Lưu raw để phục hồi, không tự VACUUM hoặc xóa lịch sử. Theo dõi dung lượng và thống nhất retention trước khi tự động dọn dữ liệu. Cảnh báo source count, parse failures, missing date và freshness có trong models/tests. Lỗi task được trả về CLI và GitHub Actions.
+Raw batches are retained for recovery. No automatic VACUUM or history deletion is configured. Monitor storage and agree on retention before implementing cleanup. Models/tests expose source counts, parse failures, missing dates, and freshness; task failures propagate to the CLI and GitHub Actions.

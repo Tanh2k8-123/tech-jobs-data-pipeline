@@ -26,13 +26,13 @@ def build():
                 "name": "description",
                 "multilineTextboxSpec": {
                     "lines": [
-                        "## Thị trường việc làm IT Việt Nam\n\n",
-                        "Nguồn: ITviec công khai. Nhu cầu = tin xuất hiện trong lần thu thập "
-                        "đầy đủ gần nhất. ",
-                        "Lương = trung bình khoảng lương tháng được công bố; "
-                        "NULL nghĩa là chưa đủ dữ liệu. ",
-                        "Biểu đồ theo ngày đăng chỉ bao gồm tin pipeline đã quan sát; "
-                        "một tin có thể thuộc nhiều thành phố.\n\n",
+                        "## Vietnam IT Job Market\n\n",
+                        "Source: public ITviec postings. Demand counts postings present in the "
+                        "latest complete snapshot. ",
+                        "Salary is the mean advertised monthly midpoint; "
+                        "NULL indicates insufficient salary data. ",
+                        "The publication-date chart includes only observed postings; "
+                        "a posting may belong to multiple cities.\n\n",
                         "[Rates By Exchange Rate API](https://www.exchangerate-api.com)",
                     ]
                 },
@@ -49,7 +49,7 @@ def build():
             "categorical",
             "job_count",
             None,
-            "Top 15 kỹ năng theo số tin",
+            "Top 15 skills by posting count",
             0,
             3,
         ),
@@ -61,7 +61,7 @@ def build():
             "temporal",
             "job_count",
             "city_name",
-            "Số tin đã quan sát theo ngày đăng và thành phố",
+            "Observed postings by publication date and city",
             3,
             3,
         ),
@@ -73,7 +73,7 @@ def build():
             "categorical",
             "avg_salary_usd",
             None,
-            "Lương quảng cáo trung bình (USD/tháng, chỉ khi đủ hai cận)",
+            "Mean advertised salary (USD/month, both bounds required)",
             0,
             9,
         ),
@@ -85,7 +85,7 @@ def build():
             "categorical",
             "salary_coverage",
             None,
-            "Tỷ lệ tin có đủ dữ liệu tính lương (0–1)",
+            "Salary midpoint coverage (0–1)",
             3,
             9,
         ),

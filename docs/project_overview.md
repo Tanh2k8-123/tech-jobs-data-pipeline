@@ -1,42 +1,42 @@
-# Tổng quan dự án: Vietnam IT Job Market Lakehouse
+# Project overview: Vietnam IT Job Market Lakehouse
 
-## Mục tiêu và phạm vi
+## Objective and scope
 
-Xây dựng pipeline thật, chạy batch mỗi ngày, phục vụ phân tích kỹ năng tuyển dụng và ngày đăng tin tại Việt Nam. Phiên bản này dùng ITviec công khai đã được kiểm chứng; không phụ thuộc API giả định của TopDev, không có chế độ demo hoặc fallback sinh dữ liệu.
+Build a real daily batch pipeline for analyzing hiring skills and posting dates in Vietnam. The implemented source is verified public ITviec content. The pipeline does not depend on an assumed TopDev API or a synthetic-data fallback.
 
-## Bộ công cụ
+## Stack
 
-Python + requests/BeautifulSoup lấy nguồn; PyArrow ghi Parquet; Databricks SDK upload và chờ Job; Unity Catalog Volume lưu raw; PySpark + Delta giữ Bronze; dbt-databricks xây Silver/Gold và tests; AI/BI Dashboard hiển thị; Terraform quản lý tài nguyên trong workspace; GitHub Actions sở hữu lịch chạy.
+Python with requests/BeautifulSoup collects source data; PyArrow writes Parquet; the Databricks SDK submits/waits for Jobs and supports replay uploads; a Unity Catalog Volume preserves raw batches; PySpark and Delta maintain Bronze; dbt-databricks builds Silver/Gold and tests; AI/BI Dashboard presents results; Terraform manages workspace resources; GitHub Actions owns scheduling.
 
-Databricks Free Edition là môi trường học có quota, không phải cam kết vận hành miễn phí không giới hạn hoặc nền tảng có SLA. Egress của workspace này đã được kiểm chứng với ITviec và FX; ingestion chạy trong Databricks để tránh lỗi truy cập nguồn từ runner GitHub. Chi phí GitHub phụ thuộc loại repository/runner và hạn mức thực tế.
+Databricks Free Edition is a learning environment with quotas and no SLA, not a promise of unlimited free operation. Workspace egress to ITviec and FX has been verified. Ingestion runs inside Databricks because the GitHub runner encountered source-access errors. GitHub usage depends on the repository type, runner, and applicable allowances.
 
-## Các cải thiện chính so với bản thiết kế ban đầu
+## Design improvements
 
-1. Nguồn dữ liệu có implementation và hợp đồng cụ thể: pagination, ID nguồn, ngày đăng JSON-LD, salary visibility và kiểm tra độ đầy đủ.
-2. Lưu raw bất biến có checksum/manifest; Bronze giữ từng quan sát thay vì MERGE ghi đè toàn bộ lịch sử theo job_id.
-3. Phân biệt posted_date, first_seen_at, snapshot_date; không suy ra đóng/mở từ một lần không thấy tin.
-4. Tách dimension kỹ năng khỏi bridge job–skill; bổ sung bridge thành phố để xử lý multi-city đúng grain.
-5. Parser lương có kiểm thử; không suy cận thiếu, không mặc định lương năm thành tháng, không tự gán tỷ giá cố định.
-6. Lương quảng cáo có số mẫu và độ phủ; mức lương ẩn được giữ NULL, không đại diện cho toàn thị trường.
-7. Một chủ lịch, chờ kết quả Job, retry có kiểm soát, replay raw và refresh dashboard sau dbt build thành công.
-8. Có cấu trúc package, khóa dependency, Terraform lock, CI, data dictionary và runbook.
+1. A verified source implementation and explicit contract cover pagination, source IDs, JSON-LD publication dates, salary visibility, and completeness checks.
+2. Immutable raw batches use checksums/manifests. Bronze preserves observations instead of overwriting all history with a job-ID-only MERGE.
+3. `posted_date`, `first_seen_at`, and `snapshot_date` have separate meanings. A missing observation does not automatically mark a posting closed.
+4. Skill dimensions and job–skill bridges have distinct roles. A city bridge handles multi-city postings at the correct grain.
+5. Salary parsing is tested. Missing bounds, annual pay periods, and FX rates are not invented.
+6. Advertised salary estimates include sample counts and coverage. Hidden salaries remain NULL and do not represent the entire market.
+7. One scheduler triggers the Job, waits for its result, supports controlled retries/replay/repair, and refreshes the dashboard after a successful dbt build.
+8. The repository includes package boundaries, dependency/provider locks, CI, a data dictionary, a runbook, and a learning guide.
 
-## Độ khó
+## Difficulty
 
-Khoảng 7/10 với người đã biết Python/SQL. Thu thập nguồn thay đổi, kiểm chứng ngữ nghĩa dữ liệu và tích hợp quyền/môi trường cloud là phần khó nhất. Quy mô MVP chưa yêu cầu streaming hoặc nhiều service. Dùng Spark nhằm thực hành lakehouse, không tự tuyên bố đang xử lý big data.
+Approximately 7/10 for someone with basic Python/SQL. Handling a changing source, validating analytical semantics, and integrating cloud permissions/runtime behavior are the hardest parts. The MVP does not require streaming or multiple services. Spark supports lakehouse practice; this data volume is not presented as a big-data workload.
 
-## Đối chiếu rubric
+## Rubric evidence
 
-Rubric chính thức hiện có 7 tiêu chí × 4 = 28 điểm kỹ thuật. Bản trước ghi 22/22 và tổng các dòng 26 là không chính xác. Mục tiêu là có bằng chứng cho từng tiêu chí, không tự chấm tối đa bằng cách liệt kê công cụ.
+The reviewed official rubric has seven criteria worth up to four points each: 28 technical points. Earlier references to 22/22 and a table totaling 26 were incorrect. The objective is to provide evidence for each criterion rather than award full marks for listing tools.
 
-| Tiêu chí | Bằng chứng cần có |
+| Criterion | Required evidence |
 |---|---|
-| Problem | Câu hỏi rõ ràng, giới hạn nguồn và cách tính chỉ số |
-| Cloud + IaC | Terraform plan/apply, tài nguyên workspace và state được giữ an toàn |
-| Orchestration | Một run thật từ ingestion đến dashboard, trạng thái lỗi truyền về caller |
-| Warehouse | Delta model đúng grain, giải thích clustering và query profile |
-| Transformation | Model dbt, parser, kết quả kiểm thử trên cloud |
-| Dashboard | Biểu đồ kỹ năng, ngày đăng, lương và độ phủ; ảnh hoặc link phù hợp quyền truy cập |
-| Reproducibility | Clone sạch, locked dependencies, cấu hình mẫu, hướng dẫn triển khai và replay |
+| Problem | Clear questions, source limitations, and metric definitions |
+| Cloud + IaC | Terraform plan/apply, deployed workspace resources, and privately retained state |
+| Orchestration | A real ingestion-to-dashboard execution with failures propagated to the caller |
+| Warehouse | Delta models with explicit grain, a clustering rationale, and query profiles |
+| Transformation | dbt models, parser behavior, and cloud test results |
+| Dashboard | Skill, posting-date, salary, and coverage charts; screenshots or access-appropriate links |
+| Reproducibility | A clean checkout, locked dependencies, configuration examples, deployment instructions, and replay |
 
-Xem [README](../README.md) để triển khai và [architecture.md](architecture.md) cho các giới hạn còn lại, bao gồm việc dbt không giao dịch nguyên tử trên toàn bộ nhiều bảng Gold.
+See the [README](../README.md) for deployment and [architecture.md](architecture.md) for operating limits, including the lack of a single atomic dbt transaction across all Gold tables.
