@@ -129,7 +129,7 @@ resource "databricks_job" "pipeline" {
     notebook_task {
       notebook_path = databricks_notebook.bronze.path
       base_parameters = {
-        input_path    = "{{tasks.extract_source.values.raw_path}}"
+        raw_path      = "{{tasks.extract_source.values.raw_path}}"
         catalog       = var.catalog
         schema_prefix = var.schema_prefix
       }

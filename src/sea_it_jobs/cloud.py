@@ -26,7 +26,7 @@ def validate_run(path: Path):
     return manifest
 
 
-def run_pipeline(catalog: str, prefix: str, job_id: int, input_path: str = ""):
+def validated_client(catalog: str, prefix: str, job_id: int):
     for identifier in (catalog, prefix):
         if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", identifier):
             raise ValueError("Catalog and schema prefix must be simple SQL identifiers")
@@ -40,6 +40,11 @@ def run_pipeline(catalog: str, prefix: str, job_id: int, input_path: str = ""):
         or tags.get("catalog") != catalog
     ):
         raise ValueError("Job project/schema tags do not match requested destination")
+    return client
+
+
+def run_pipeline(catalog: str, prefix: str, job_id: int, input_path: str = ""):
+    client = validated_client(catalog, prefix, job_id)
     LOG.info("databricks_job_submitted job_id=%s", job_id)
     waiter = client.jobs.run_now(
         job_id=job_id,
@@ -51,12 +56,26 @@ def run_pipeline(catalog: str, prefix: str, job_id: int, input_path: str = ""):
     LOG.info("databricks_job_succeeded run_id=%s", result.run_id)
 
 
+def repair_pipeline(catalog: str, prefix: str, job_id: int, run_id: int):
+    client = validated_client(catalog, prefix, job_id)
+    run = client.jobs.get_run(run_id, include_history=True)
+    if run.job_id != job_id:
+        raise ValueError("Run does not belong to the requested pipeline Job")
+    repairs = [item.id for item in run.repair_history or [] if item.id is not None]
+    waiter = client.jobs.repair_run(
+        run_id=run_id,
+        latest_repair_id=repairs[-1] if repairs else None,
+        rerun_all_failed_tasks=True,
+        rerun_dependent_tasks=True,
+    )
+    LOG.info("databricks_repair_started run_id=%s", run_id)
+    result = waiter.result(timeout=timedelta(hours=2))
+    LOG.info("databricks_repair_succeeded run_id=%s", result.run_id)
+
+
 def upload_and_run(path: Path, catalog: str, prefix: str, job_id: int):
     manifest = validate_run(path)
-    for identifier in (catalog, prefix):
-        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", identifier):
-            raise ValueError("Catalog and schema prefix must be simple SQL identifiers")
-    client = workspace_client()
+    client = validated_client(catalog, prefix, job_id)
     destination = (
         f"/Volumes/{catalog}/{prefix}_bronze/raw_files/itviec/"
         f"{manifest['snapshot_date']}/{manifest['run_id']}"

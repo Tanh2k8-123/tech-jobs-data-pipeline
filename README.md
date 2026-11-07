@@ -78,6 +78,8 @@ uv run it-jobs replay --input artifacts/landing/YYYY-MM-DD/RUN_ID --job-id YOUR_
 
 Không dùng ngày quá khứ để tải tin hiện tại rồi gán thành lịch sử. Backfill chỉ dùng các batch raw đã lưu. Chạy lại cùng batch không nhân bản Bronze; sửa model dbt và replay sẽ tạo một lượt Job mới.
 
+Nếu extraction đã thành công nhưng task sau lỗi, dùng `uv run it-jobs repair --job-id ID --run-id FAILED_RUN_ID` để chạy lại các task lỗi và downstream, giữ nguyên raw/task value đã thu thập. Workflow thủ công cũng hỗ trợ ô `repair_run_id`; lịch hằng ngày để trống ô này nên luôn lấy snapshot mới.
+
 ## Tự động hóa trên GitHub
 
 Sau khi push repository và triển khai hạ tầng:

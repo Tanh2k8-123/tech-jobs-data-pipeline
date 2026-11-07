@@ -16,6 +16,7 @@ Ghi `job_id` từ Terraform output. `uv run it-jobs run --job-id ID` kích hoạ
 - Upload gián đoạn: dùng `replay` với đúng đường dẫn raw. File đã tồn tại phải có cùng checksum, không bị ghi đè.
 - Spark lỗi: retry cùng batch. MERGE observation và ledger đều idempotent.
 - dbt lỗi: xem model/test cụ thể trong Databricks Job; sửa code, triển khai lại rồi replay batch. Không refresh dashboard khi build thất bại.
+- Nếu task extraction đã thành công, có thể dùng `it-jobs repair --job-id ID --run-id RUN_ID` hoặc input `repair_run_id` của workflow để chạy lại task lỗi và downstream. Các tham số tính từ task value phải có tên riêng, tránh bị Job parameters tự động ghi đè.
 - Nguồn ẩn lương: kết quả NULL và warning là đúng. Không sửa thành 0 hay tạo mẫu giả để tắt cảnh báo.
 - Backfill: replay raw theo run đã lưu. Nếu dựng lại workspace chỉ từ dữ liệu cũ, kiểm tra freshness sẽ báo stale theo thiết kế; cần tải một snapshot hiện tại trước khi công bố dashboard.
 

@@ -7,10 +7,10 @@ import re
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-dbutils.widgets.text("input_path", "")
+dbutils.widgets.text("raw_path", "")
 dbutils.widgets.text("catalog", "workspace")
 dbutils.widgets.text("schema_prefix", "vn_jobs")
-input_path = dbutils.widgets.get("input_path").rstrip("/")
+input_path = dbutils.widgets.get("raw_path").rstrip("/")
 catalog = dbutils.widgets.get("catalog")
 prefix = dbutils.widgets.get("schema_prefix")
 for identifier in (catalog, prefix):
