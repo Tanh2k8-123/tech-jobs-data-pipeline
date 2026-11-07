@@ -17,7 +17,7 @@ sea-it-jobs-pipeline/
 ├── scripts/              # Tạo dashboard và triển khai Terraform
 ├── tests/                # Unit, toàn vẹn raw và kiểm tra ngữ nghĩa SQL
 ├── docs/                 # Thiết kế, hợp đồng, từ điển, vận hành
-├── .github/workflows/    # CI và lịch chạy ingestion bên ngoài Databricks
+├── .github/workflows/    # CI và lịch kích hoạt/chờ toàn bộ Databricks Job
 ├── artifacts/            # Raw thật, log, plan, công cụ; bị loại khỏi Git
 ├── .env                  # Cấu hình cá nhân; bị loại khỏi Git
 ├── pyproject.toml

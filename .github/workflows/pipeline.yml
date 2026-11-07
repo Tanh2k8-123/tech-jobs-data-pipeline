@@ -32,7 +32,7 @@ jobs:
           test -n "$DATABRICKS_HOST"
           test -n "$DATABRICKS_TOKEN"
           test -n "$PIPELINE_JOB_ID"
-      - name: Extract, upload and wait for Bronze, dbt tests and dashboard
+      - name: Run cloud ingestion, Bronze, dbt tests and dashboard
         shell: bash
         run: |
           mkdir -p artifacts

@@ -8,7 +8,7 @@ Xây dựng pipeline thật, chạy batch mỗi ngày, phục vụ phân tích k
 
 Python + requests/BeautifulSoup lấy nguồn; PyArrow ghi Parquet; Databricks SDK upload và chờ Job; Unity Catalog Volume lưu raw; PySpark + Delta giữ Bronze; dbt-databricks xây Silver/Gold và tests; AI/BI Dashboard hiển thị; Terraform quản lý tài nguyên trong workspace; GitHub Actions sở hữu lịch chạy.
 
-Databricks Free Edition là môi trường học có quota, không phải cam kết vận hành miễn phí không giới hạn hoặc nền tảng có SLA. Ingestion chạy bên ngoài Databricks để không phụ thuộc egress serverless. Chi phí GitHub phụ thuộc loại repository/runner và hạn mức thực tế.
+Databricks Free Edition là môi trường học có quota, không phải cam kết vận hành miễn phí không giới hạn hoặc nền tảng có SLA. Egress của workspace này đã được kiểm chứng với ITviec và FX; ingestion chạy trong Databricks để tránh lỗi truy cập nguồn từ runner GitHub. Chi phí GitHub phụ thuộc loại repository/runner và hạn mức thực tế.
 
 ## Các cải thiện chính so với bản thiết kế ban đầu
 

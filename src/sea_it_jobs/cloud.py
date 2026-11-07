@@ -26,16 +26,37 @@ def validate_run(path: Path):
     return manifest
 
 
-def upload_and_run(path: Path, catalog: str, prefix: str, job_id: int):
-    manifest = validate_run(path)
+def run_pipeline(catalog: str, prefix: str, job_id: int, input_path: str = ""):
     for identifier in (catalog, prefix):
         if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", identifier):
             raise ValueError("Catalog and schema prefix must be simple SQL identifiers")
     client = workspace_client()
     job = client.jobs.get(job_id)
     tags = job.settings.tags if job.settings else {}
-    if not tags or tags.get("project") != "sea-it-jobs" or tags.get("schema_prefix") != prefix:
+    if (
+        not tags
+        or tags.get("project") != "sea-it-jobs"
+        or tags.get("schema_prefix") != prefix
+        or tags.get("catalog") != catalog
+    ):
         raise ValueError("Job project/schema tags do not match requested destination")
+    LOG.info("databricks_job_submitted job_id=%s", job_id)
+    waiter = client.jobs.run_now(
+        job_id=job_id,
+        job_parameters={"input_path": input_path},
+        idempotency_token=uuid4().hex,
+    )
+    LOG.info("databricks_run_started run_id=%s", waiter.response.run_id)
+    result = waiter.result(timeout=timedelta(hours=2))
+    LOG.info("databricks_job_succeeded run_id=%s", result.run_id)
+
+
+def upload_and_run(path: Path, catalog: str, prefix: str, job_id: int):
+    manifest = validate_run(path)
+    for identifier in (catalog, prefix):
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", identifier):
+            raise ValueError("Catalog and schema prefix must be simple SQL identifiers")
+    client = workspace_client()
     destination = (
         f"/Volumes/{catalog}/{prefix}_bronze/raw_files/itviec/"
         f"{manifest['snapshot_date']}/{manifest['run_id']}"
@@ -55,10 +76,4 @@ def upload_and_run(path: Path, catalog: str, prefix: str, job_id: int):
                     != hashlib.sha256(local.read_bytes()).digest()
                 ):
                     raise ValueError("Immutable cloud path already has different content")
-    LOG.info("databricks_job_submitted job_id=%s run_id=%s", job_id, manifest["run_id"])
-    result = client.jobs.run_now(
-        job_id=job_id,
-        job_parameters={"input_path": destination},
-        idempotency_token=uuid4().hex,
-    ).result(timeout=timedelta(hours=2))
-    LOG.info("databricks_job_succeeded run_id=%s", result.run_id)
+    run_pipeline(catalog, prefix, job_id, destination)

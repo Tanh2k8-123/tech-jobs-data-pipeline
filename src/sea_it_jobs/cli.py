@@ -7,7 +7,7 @@ import requests
 from databricks.sdk.errors import DatabricksError
 from dotenv import load_dotenv
 
-from sea_it_jobs.cloud import upload_and_run
+from sea_it_jobs.cloud import run_pipeline, upload_and_run
 from sea_it_jobs.config import check_connection
 from sea_it_jobs.ingestion import collect
 
@@ -19,11 +19,11 @@ def main():
     commands.add_parser("check")
     for name in ("extract", "run", "replay"):
         command = commands.add_parser(name)
-        if name != "replay":
+        if name == "extract":
             command.add_argument("--output", type=Path, default=Path("artifacts/landing"))
             command.add_argument("--request-interval", type=float, default=1.0)
             command.add_argument("--max-pages", type=int, default=100)
-        else:
+        elif name == "replay":
             command.add_argument("--input", type=Path, required=True)
         if name != "extract":
             command.add_argument("--catalog", default=os.getenv("DATABRICKS_CATALOG", "workspace"))
@@ -37,13 +37,11 @@ def main():
             return 0
         if args.command == "run":
             check_connection()
-        path = (
-            args.input
-            if args.command == "replay"
-            else collect(args.output, delay=args.request_interval, max_pages=args.max_pages)
-        )
-        if args.command != "extract":
-            upload_and_run(path, args.catalog, args.schema_prefix, args.job_id)
+            run_pipeline(args.catalog, args.schema_prefix, args.job_id)
+        elif args.command == "replay":
+            upload_and_run(args.input, args.catalog, args.schema_prefix, args.job_id)
+        else:
+            collect(args.output, delay=args.request_interval, max_pages=args.max_pages)
     except (requests.RequestException, DatabricksError) as error:
         logging.error(
             "Remote operation failed: %s; no fallback data was published", type(error).__name__

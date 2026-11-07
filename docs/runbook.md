@@ -8,7 +8,7 @@ Chạy `uv run it-jobs check` tại thư mục dự án. CLI đọc `.env`, ki�
 
 Chạy `uv run python scripts/deploy.py` để xem plan, rồi `uv run python scripts/deploy.py --apply`. Giữ nguyên state đã tạo trong `infra/terraform/terraform.tfstate`; state/plan không được đưa lên Git. Bản OAuth dùng cho Terraform chỉ đi qua môi trường tiến trình, không ghi token xuống file. Dashboard được tạo trong workspace, không chia sẻ công khai và không nhúng thông tin xác thực.
 
-Ghi `job_id` từ Terraform output. `uv run it-jobs run --job-id ID` thu thập nguồn thật và chờ hoàn tất Job. Không chạy notebook với input_path rỗng.
+Ghi `job_id` từ Terraform output. `uv run it-jobs run --job-id ID` kích hoạt toàn bộ DAG thu thập nguồn thật trên Databricks và chờ hoàn tất Job. Tham số input_path rỗng có nghĩa lấy snapshot mới ở task extraction; notebook Bronze luôn nhận đường dẫn cụ thể qua task value. Replay nhận input_path đã lưu và bỏ qua extraction mới.
 
 ## Khôi phục và chạy bù
 

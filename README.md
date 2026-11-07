@@ -1,6 +1,6 @@
 # Vietnam IT Job Market Lakehouse
 
-Pipeline batch hằng ngày cho thị trường việc làm IT Việt Nam. Dữ liệu được lấy từ trang ITviec công khai, lưu nguyên bản vào Unity Catalog Volume, nạp Delta Bronze bằng PySpark, biến đổi bằng dbt và hiển thị trên Databricks AI/BI Dashboard.
+Pipeline batch hằng ngày cho thị trường việc làm IT Việt Nam. Databricks Job lấy dữ liệu ITviec công khai, lưu nguyên bản vào Unity Catalog Volume, nạp Delta Bronze bằng PySpark, biến đổi bằng dbt và refresh Databricks AI/BI Dashboard. GitHub Actions đặt lịch và chờ Job.
 
 Phạm vi hiện tại là Việt Nam; Singapore được giữ ở hướng mở rộng, chưa tuyên bố đã tích hợp. Không có chế độ demo, dữ liệu sinh tự động hoặc fallback sang dữ liệu giả.
 
@@ -15,14 +15,14 @@ Phạm vi hiện tại là Việt Nam; Singapore được giữ ở hướng m�
 
 ```mermaid
 flowchart LR
-    A[GitHub Actions - 08:00 giờ Việt Nam] --> B[Python - ITviec + FX]
+    A[GitHub Actions - 08:00 giờ Việt Nam] --> B[Databricks Job - Python ITviec + FX]
     B --> C[Unity Catalog Volume - raw bất biến]
     C --> D[Databricks Job - PySpark Bronze]
     D --> E[dbt build - Silver, Gold, tests]
     E --> F[Refresh AI/BI Dashboard]
 ```
 
-GitHub Actions là nơi duy nhất đặt lịch. Job trên Databricks chỉ chạy khi có batch raw hoàn chỉnh; CLI chờ toàn bộ Job kết thúc và trả mã lỗi khi một task thất bại. `max_concurrent_runs=1` và GitHub concurrency tránh các lượt ghi chạy chồng nhau.
+GitHub Actions là nơi duy nhất đặt lịch. Job trên Databricks sở hữu DAG thu thập → Bronze → dbt → dashboard; Bronze chỉ nhận batch raw hoàn chỉnh. CLI chờ toàn bộ Job kết thúc và trả mã lỗi khi một task thất bại. `max_concurrent_runs=1` và GitHub concurrency tránh các lượt ghi chạy chồng nhau.
 
 - **Raw:** `jobs.parquet`, `fx.json`, `manifest.json`; tên thư mục chứa ngày Việt Nam và `run_id`. Manifest được ghi/upload sau cùng, có số dòng và checksum SHA-256.
 - **Bronze:** mỗi dòng là một quan sát của `(source, source_job_id, run_id)`. MERGE chỉ chèn quan sát mới, không ghi đè lịch sử. Ledger `ingestion_runs` được ghi sau MERGE; dữ liệu chưa có ledger không đi vào Silver.
@@ -33,7 +33,7 @@ Chi tiết: [kiến trúc](docs/architecture.md), [hợp đồng nguồn](docs/s
 
 ## Chạy từ đầu
 
-Yêu cầu: Python 3.12 hoặc 3.13, uv, Terraform >=1.9, một workspace Databricks có Unity Catalog và SQL warehouse serverless. Free Edition có quota, không có SLA; không giả định nguồn ngoài truy cập được từ serverless nên ingestion chạy bên ngoài Databricks.
+Yêu cầu: Python 3.12 hoặc 3.13, uv, Terraform >=1.9, một workspace Databricks có Unity Catalog và SQL warehouse serverless. Free Edition có quota, không có SLA. Workspace triển khai đã được kiểm chứng truy cập ITviec và FX từ serverless; một workspace khác cần có chính sách outbound phù hợp.
 
 ```powershell
 uv sync --locked --extra dev
@@ -69,7 +69,7 @@ Lấy `job_id` trong Terraform output, sau đó chạy pipeline:
 uv run it-jobs run --job-id YOUR_JOB_ID
 ```
 
-Có thể tách thu thập và nạp lại một batch thật đã lưu:
+Có thể thu thập riêng trên máy có quyền truy cập nguồn, rồi upload/nạp lại một batch thật. Khi replay, task extraction bỏ qua việc lấy dữ liệu mới và chuyển đúng đường dẫn batch đã lưu sang Bronze:
 
 ```powershell
 uv run it-jobs extract

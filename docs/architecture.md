@@ -4,7 +4,7 @@
 
 `src/sea_it_jobs/sources/itviec.py` là adapter đã kiểm chứng. HTTP client quản lý robots.txt, khoảng cách request, retry 429/5xx và timeout. Parser nguồn không xử lý FX hoặc tạo surrogate key. `salary.py` chỉ phân tích cú pháp, giữ nguyên cận chưa biết và trả trạng thái khi không thể diễn giải an toàn. Raw payload luôn đi kèm kết quả parser để có thể kiểm tra lại.
 
-`ingestion.py` hoàn tất snapshot nguồn, lấy tỷ giá thực và ghi Parquet với schema tường minh, kể cả khi cả cột lương đều rỗng. `cloud.py` xác minh checksum, upload bất biến rồi chờ Job. Notebook độc lập với package Python, chỉ nạp và kiểm tra Bronze. dbt quản lý Silver/Gold và các kiểm thử phân tích.
+`ingestion.py` hoàn tất snapshot nguồn, lấy tỷ giá thực và ghi Parquet với schema tường minh, kể cả khi cả cột lương đều rỗng. Notebook `00_extract_source.py` chạy package này trên driver Databricks và truyền đường dẫn raw bằng task value. `01_load_bronze.py` độc lập với package Python, chỉ nạp và kiểm tra Bronze. dbt quản lý Silver/Gold và các kiểm thử phân tích. `cloud.py` kích hoạt/chờ Job; với replay từ máy local, module này xác minh checksum và upload bất biến trước khi chạy.
 
 ## Lịch sử và chạy lại
 
@@ -26,7 +26,7 @@ erDiagram
 
 Fact có một dòng hiện tại mỗi tin đã từng quan sát. Dimension công ty chứa thuộc tính công ty, không trộn số tin hoặc lương trung bình vào dimension. Bridge kỹ năng duy nhất theo `(job_sk, skill_sk)`; bridge thành phố duy nhất theo `(job_sk, city_name)`. Không tự gộp hai tin ở hai website thành một thực thể; entity resolution là bước mở rộng cần quy tắc riêng.
 
-MVP không cần microservices, Kafka, Kubernetes, Airflow riêng hay dimension ngày. GitHub Actions khởi động và chờ Databricks; Databricks sở hữu DAG bên trong. Terraform chỉ quản lý tài nguyên workspace đã tồn tại, không tạo account hoặc cloud workspace Free Edition.
+MVP không cần microservices, Kafka, Kubernetes, Airflow riêng hay dimension ngày. GitHub Actions khởi động và chờ Databricks; Databricks sở hữu toàn bộ DAG, kể cả ingestion. Kiểm chứng thực tế cho thấy runner GitHub không truy cập được nguồn, còn workspace Databricks trả 200 cho ITviec/FX; do đó nguồn được thu thập trong serverless. Terraform chỉ quản lý tài nguyên workspace đã tồn tại, không tạo account hoặc cloud workspace Free Edition.
 
 ## Lương và tỷ giá
 

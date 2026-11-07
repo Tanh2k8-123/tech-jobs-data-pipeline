@@ -1,5 +1,7 @@
 locals {
-  dbt_root = "${path.module}/../../dbt"
+  dbt_root  = "${path.module}/../../dbt"
+  src_root  = "${path.module}/../../src"
+  src_files = toset([for file in fileset(local.src_root, "**") : file if endswith(file, ".py")])
   dbt_files = toset([
     for file in fileset(local.dbt_root, "**") : file
     if can(regex("\\.(sql|yml|csv)$", file)) && !contains(["profiles.yml", ".user.yml"], file)
@@ -39,6 +41,26 @@ resource "databricks_notebook" "bronze" {
   depends_on = [databricks_directory.project]
 }
 
+resource "databricks_notebook" "extract" {
+  path       = "${var.workspace_path}/00_extract_source"
+  language   = "PYTHON"
+  source     = "${path.module}/../../notebooks/00_extract_source.py"
+  depends_on = [databricks_directory.project]
+}
+
+resource "databricks_directory" "src" {
+  for_each   = toset([for file in local.src_files : replace(dirname(file), "\\", "/")])
+  path       = "${var.workspace_path}/src/${each.value}"
+  depends_on = [databricks_directory.project]
+}
+
+resource "databricks_workspace_file" "src" {
+  for_each   = local.src_files
+  path       = "${var.workspace_path}/src/${each.value}"
+  source     = "${local.src_root}/${each.value}"
+  depends_on = [databricks_directory.src]
+}
+
 resource "databricks_workspace_file" "dbt" {
   for_each   = local.dbt_files
   path       = "${var.workspace_path}/dbt/${each.value}"
@@ -65,12 +87,13 @@ resource "databricks_dashboard" "market" {
 }
 
 resource "databricks_job" "pipeline" {
-  name                = "Vietnam IT jobs - Bronze, dbt and dashboard"
+  name                = "Vietnam IT jobs - ingestion, Bronze, dbt and dashboard"
   max_concurrent_runs = 1
   timeout_seconds     = 7200
   tags = {
     project       = "sea-it-jobs"
     schema_prefix = var.schema_prefix
+    catalog       = var.catalog
   }
   queue { enabled = true }
   parameter {
@@ -85,14 +108,28 @@ resource "databricks_job" "pipeline" {
     }
   }
   task {
+    task_key        = "extract_source"
+    timeout_seconds = 3600
+    max_retries     = 1
+    notebook_task {
+      notebook_path = databricks_notebook.extract.path
+      base_parameters = {
+        input_path  = "{{job.parameters.input_path}}"
+        raw_root    = "/Volumes/${var.catalog}/${var.schema_prefix}_bronze/raw_files/itviec"
+        source_root = "/Workspace${var.workspace_path}/src"
+      }
+    }
+  }
+  task {
     task_key                  = "load_bronze"
     timeout_seconds           = 1800
     max_retries               = 2
     min_retry_interval_millis = 30000
+    depends_on { task_key = "extract_source" }
     notebook_task {
       notebook_path = databricks_notebook.bronze.path
       base_parameters = {
-        input_path    = "{{job.parameters.input_path}}"
+        input_path    = "{{tasks.extract_source.values.raw_path}}"
         catalog       = var.catalog
         schema_prefix = var.schema_prefix
       }
@@ -122,5 +159,5 @@ resource "databricks_job" "pipeline" {
       warehouse_id = var.warehouse_id
     }
   }
-  depends_on = [databricks_workspace_file.dbt, databricks_volume.raw]
+  depends_on = [databricks_workspace_file.dbt, databricks_workspace_file.src, databricks_volume.raw]
 }
