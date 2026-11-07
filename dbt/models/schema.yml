@@ -1,0 +1,81 @@
+version: 2
+models:
+  - name: stg_ingestion_runs
+    columns:
+      - name: run_id
+        data_tests: [unique, not_null]
+      - name: snapshot_date
+        data_tests: [not_null]
+  - name: fct_job_postings
+    description: One latest observation per source job; presence in latest snapshot is not proof of open status.
+    columns:
+      - name: job_sk
+        data_tests: [unique, not_null]
+      - name: company_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: company_sk
+      - name: source_job_id
+        data_tests: [not_null]
+      - name: salary_parse_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [parsed, undisclosed, unsupported, unsupported_period]
+  - name: dim_companies
+    columns:
+      - name: company_sk
+        data_tests: [unique, not_null]
+  - name: dim_skills
+    columns:
+      - name: skill_sk
+        data_tests: [unique, not_null]
+      - name: skill_name
+        data_tests: [unique, not_null]
+  - name: bridge_job_skills
+    columns:
+      - name: job_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_job_postings')
+                field: job_sk
+      - name: skill_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_skills')
+                field: skill_sk
+  - name: bridge_job_cities
+    columns:
+      - name: job_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_job_postings')
+                field: job_sk
+      - name: city_name
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [Ha Noi, Ho Chi Minh, Da Nang, Other]
+  - name: mart_skill_demand
+    columns:
+      - name: skill_sk
+        data_tests: [unique, not_null]
+seeds:
+  - name: city_aliases
+    columns:
+      - name: city_alias
+        data_tests: [unique, not_null]
+  - name: skill_aliases
+    columns:
+      - name: skill_alias
+        data_tests: [unique, not_null]

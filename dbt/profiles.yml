@@ -1,0 +1,11 @@
+vn_it_jobs:
+  target: databricks
+  outputs:
+    databricks:
+      type: databricks
+      catalog: "{{ env_var('DATABRICKS_CATALOG', 'workspace') }}"
+      schema: "{{ env_var('SCHEMA_PREFIX', 'vn_jobs') }}_silver"
+      host: "{{ env_var('DATABRICKS_HOST', 'not-configured') }}"
+      http_path: "{{ env_var('DATABRICKS_HTTP_PATH', '/not-configured') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN', '') }}"
+      threads: 2

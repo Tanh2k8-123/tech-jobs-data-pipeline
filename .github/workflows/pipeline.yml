@@ -1,0 +1,48 @@
+name: Daily Vietnam IT jobs
+on:
+  schedule:
+    - cron: '0 1 * * *' # 08:00 Asia/Ho_Chi_Minh; GitHub may delay cron events.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vietnam-it-jobs-production
+  cancel-in-progress: false
+jobs:
+  pipeline:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_DAILY_PIPELINE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+      DATABRICKS_CATALOG: ${{ vars.DATABRICKS_CATALOG || 'workspace' }}
+      SCHEMA_PREFIX: ${{ vars.SCHEMA_PREFIX || 'vn_jobs' }}
+      PIPELINE_JOB_ID: ${{ vars.PIPELINE_JOB_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.19'
+      - run: uv sync --locked
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          test -n "$DATABRICKS_HOST"
+          test -n "$DATABRICKS_TOKEN"
+          test -n "$PIPELINE_JOB_ID"
+      - name: Extract, upload and wait for Bronze, dbt tests and dashboard
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          uv run it-jobs run --job-id "$PIPELINE_JOB_ID" 2>&1 | tee artifacts/pipeline.log
+      - name: Preserve failure diagnostics for authenticated repository users
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-extraction
+          path: |
+            artifacts/pipeline.log
+            artifacts/landing/**/manifest.json
+          retention-days: 7

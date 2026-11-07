@@ -1,0 +1,5 @@
+catalog                  = "workspace"
+schema_prefix            = "vn_jobs"
+warehouse_id             = "REPLACE_WITH_SQL_WAREHOUSE_ID"
+workspace_path           = "/Shared/vn-it-jobs"
+enable_liquid_clustering = true

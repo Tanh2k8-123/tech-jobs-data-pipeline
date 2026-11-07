@@ -1,0 +1,264 @@
+{
+  "datasets": [
+    {
+      "name": "skills",
+      "displayName": "Top 15 skills",
+      "queryLines": [
+        "SELECT skill_name, job_count, avg_salary_usd, salary_sample_count, salary_coverage FROM ${catalog}.${prefix}_gold.mart_skill_demand ORDER BY job_count DESC, skill_name LIMIT 15"
+      ]
+    },
+    {
+      "name": "cities",
+      "displayName": "Observed posting dates",
+      "queryLines": [
+        "SELECT posted_date, city_name, job_count FROM ${catalog}.${prefix}_gold.mart_daily_city_jobs ORDER BY posted_date, city_name"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "market",
+      "displayName": "Vietnam IT jobs",
+      "layout": [
+        {
+          "widget": {
+            "name": "description",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Thị trường việc làm IT Việt Nam\n\n",
+                "Nguồn: ITviec công khai. Nhu cầu = tin xuất hiện trong lần thu thập đầy đủ gần nhất. ",
+                "Lương = trung bình khoảng lương tháng được công bố; NULL nghĩa là chưa đủ dữ liệu. ",
+                "Biểu đồ theo ngày đăng chỉ bao gồm tin pipeline đã quan sát; một tin có thể thuộc nhiều thành phố.\n\n",
+                "[Rates By Exchange Rate API](https://www.exchangerate-api.com)"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "demand",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "skills",
+                  "fields": [
+                    {
+                      "name": "skill_name",
+                      "expression": "`skill_name`"
+                    },
+                    {
+                      "name": "job_count",
+                      "expression": "`job_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "skill_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "job_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 15 kỹ năng theo số tin"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cities",
+                  "fields": [
+                    {
+                      "name": "posted_date",
+                      "expression": "`posted_date`"
+                    },
+                    {
+                      "name": "job_count",
+                      "expression": "`job_count`"
+                    },
+                    {
+                      "name": "city_name",
+                      "expression": "`city_name`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "posted_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "job_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "city_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Số tin đã quan sát theo ngày đăng và thành phố"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 3,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "salary",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "skills",
+                  "fields": [
+                    {
+                      "name": "skill_name",
+                      "expression": "`skill_name`"
+                    },
+                    {
+                      "name": "avg_salary_usd",
+                      "expression": "`avg_salary_usd`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "skill_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg_salary_usd",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Lương quảng cáo trung bình (USD/tháng, chỉ khi đủ hai cận)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "coverage",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "skills",
+                  "fields": [
+                    {
+                      "name": "skill_name",
+                      "expression": "`skill_name`"
+                    },
+                    {
+                      "name": "salary_coverage",
+                      "expression": "`salary_coverage`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "skill_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "salary_coverage",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tỷ lệ tin có đủ dữ liệu tính lương (0–1)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 9,
+            "width": 3,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ]
+}

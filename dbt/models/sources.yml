@@ -1,0 +1,13 @@
+version: 2
+sources:
+  - name: bronze
+    database: "{{ var('catalog') }}"
+    schema: "{{ var('schema_prefix') }}_bronze"
+    tables:
+      - name: raw_it_job_observations
+        description: Immutable observations keyed by source, source_job_id and run_id.
+      - name: ingestion_runs
+        description: Completion ledger, written only after the Bronze observation merge succeeds.
+        columns:
+          - name: run_id
+            data_tests: [unique, not_null]
