@@ -14,3 +14,7 @@ sha2(concat(
   {%- endfor -%}
 ), 256)
 {%- endmacro %}
+
+{% macro normalized_job_title(expression) -%}
+translate(lower({{ expression }}), 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ-/_', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd   ')
+{%- endmacro %}

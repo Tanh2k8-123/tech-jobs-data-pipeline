@@ -1,0 +1,64 @@
+version: 2
+seeds:
+  - name: role_tag_labels
+    columns:
+      - name: skill_name
+        data_tests: [unique, not_null]
+  - name: role_rules
+    columns:
+      - name: rule_id
+        data_tests: [unique, not_null]
+      - name: role_family
+        data_tests: [unique, not_null]
+      - name: priority
+        data_tests: [unique, not_null]
+      - name: title_pattern
+        data_tests: [not_null]
+models:
+  - name: dim_job_roles
+    columns:
+      - name: role_sk
+        data_tests: [unique, not_null]
+      - name: role_family
+        data_tests: [unique, not_null]
+  - name: fct_job_daily_snapshots
+    description: One posting in the last complete source batch for a collected day.
+    columns:
+      - name: snapshot_sk
+        data_tests: [unique, not_null]
+      - name: job_sk
+        data_tests: [not_null]
+      - name: role_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_job_roles')
+                field: role_sk
+      - name: company_sk
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_companies')
+                field: company_sk
+      - name: role_classification
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [primary_title_match, full_title_match, generic_title_match, multiple_primary_matches, unclassified]
+  - name: bridge_job_snapshot_skills
+    columns:
+      - name: snapshot_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_job_daily_snapshots')
+                field: snapshot_sk
+      - name: skill_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_skills')
+                field: skill_sk

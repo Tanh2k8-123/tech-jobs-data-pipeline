@@ -28,3 +28,13 @@ These links need workspace access:
 
 - [Databricks Job](https://dbc-63d22f94-de5b.cloud.databricks.com/#job/198306811950277)
 - [Dashboard](https://dbc-63d22f94-de5b.cloud.databricks.com/dashboardsv3/01f1daaffcd713898cd8c43b363dce39/published)
+
+## Role analysis added on 8 November 2026
+
+- 52 local tests passed, including title rules, same-day batch selection, historical skills, and role-filtered queries.
+- Databricks run `687396012895547` rebuilt dbt models and refreshed the dashboard using existing Bronze data. All 66 data tests completed: 65 passed and one expected salary warning.
+- Daily facts selected 632 posts for 7 November and 629 for 8 November, using the last complete batch on each day.
+- Queries were checked with All roles, Data Engineer, and Backend Developer. The selected role changes the denominator as well as the skill counts.
+- Under the current title rules, the latest snapshot has 16 Data Engineer posts. Python and SQL each appear in 10 posts (62.5%). These are source-tag mentions, not full mandatory requirements.
+
+The dashboard exposes title-label issues and collected-day counts. Two days of data are not enough to infer a long-term market trend. See [role analysis](role_analysis.md).

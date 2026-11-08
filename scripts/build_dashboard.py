@@ -1,136 +1,318 @@
-"""Build the versioned Lakeview template; Terraform substitutes catalog and prefix."""
+"""Build the role and skill analysis dashboard from versioned SQL queries."""
 
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+ALL_ROLES = "All roles"
+
+
+def parameter():
+    return {
+        "keyword": "role_family",
+        "displayName": "Role family",
+        "dataType": "STRING",
+        "defaultSelection": {"values": {"dataType": "STRING", "values": [{"value": ALL_ROLES}]}},
+    }
+
+
+def dataset(name, filtered=True):
+    text = (ROOT / "dashboards/queries" / f"{name}.sql").read_text(encoding="utf-8")
+    value = {
+        "name": name,
+        "displayName": name.replace("_", " ").title(),
+        "queryLines": text.splitlines(keepends=True),
+    }
+    if filtered:
+        value["parameters"] = [parameter()]
+    return value
+
+
+def query(dataset_name, fields):
+    return [
+        {
+            "name": "main_query",
+            "query": {
+                "datasetName": dataset_name,
+                "fields": [{"name": field, "expression": f"`{field}`"} for field in fields],
+                "disaggregated": True,
+            },
+        }
+    ]
+
+
+def position(widget, x, y, width, height):
+    return {"widget": widget, "position": {"x": x, "y": y, "width": width, "height": height}}
+
+
+def chart(name, dataset_name, kind, x, y, title, left, top, color=None, extra=()):
+    fields = [x, y] + ([color] if color else []) + list(extra)
+    encodings = {
+        "x": {"fieldName": x, "scale": {"type": "temporal" if kind == "line" else "quantitative"}},
+        "y": {
+            "fieldName": y,
+            "scale": {"type": "quantitative" if kind == "line" else "categorical"},
+        },
+    }
+    labels = {
+        "posting_count": "Observed postings",
+        "role_family": "Role family",
+        "snapshot_date": "Collected day",
+        "skill_share_pct": "Posts mentioning skill (%)",
+        "skill_name": "Skill",
+    }
+    encodings["x"]["displayName"] = labels[x]
+    encodings["y"]["displayName"] = labels[y]
+    if kind == "bar":
+        encodings["y"]["scale"]["sort"] = {"by": "value"}
+    if color:
+        encodings["color"] = {"fieldName": color, "scale": {"type": "categorical"}}
+        encodings["color"]["displayName"] = labels[color]
+    if extra:
+        encodings["extra"] = [
+            {"fieldName": field, "displayName": field.replace("_", " ").title()} for field in extra
+        ]
+    return position(
+        {
+            "name": name,
+            "queries": query(dataset_name, fields),
+            "spec": {
+                "version": 3,
+                "widgetType": kind,
+                "encodings": encodings,
+                "frame": {"showTitle": True, "title": title},
+            },
+        },
+        left,
+        top,
+        3,
+        7,
+    )
+
+
+def counter(name, field, title, left):
+    return position(
+        {
+            "name": name,
+            "queries": query("role_summary", [field]),
+            "spec": {
+                "version": 2,
+                "widgetType": "counter",
+                "encodings": {"value": {"fieldName": field, "displayName": title}},
+                "frame": {"showTitle": True, "title": title},
+            },
+        },
+        left,
+        5,
+        2,
+        2,
+    )
+
+
+def table(name, dataset_name, columns, top, height):
+    return position(
+        {
+            "name": name,
+            "queries": query(dataset_name, list(columns)),
+            "spec": {
+                "version": 2,
+                "widgetType": "table",
+                "encodings": {
+                    "columns": [
+                        {"fieldName": field, "displayName": label}
+                        for field, label in columns.items()
+                    ]
+                },
+                "frame": {
+                    "showTitle": True,
+                    "title": "Snapshot details"
+                    if name == "snapshot_info"
+                    else "Skills mentioned in postings by role",
+                },
+            },
+        },
+        0,
+        top,
+        6,
+        height,
+    )
 
 
 def build():
-    skills_sql = (
-        "SELECT skill_name, job_count, avg_salary_usd, salary_sample_count, salary_coverage "
-        "FROM ${catalog}.${prefix}_gold.mart_skill_demand "
-        "ORDER BY job_count DESC, skill_name LIMIT 15"
-    )
-    cities_sql = (
-        "SELECT posted_date, city_name, job_count "
-        "FROM ${catalog}.${prefix}_gold.mart_daily_city_jobs ORDER BY posted_date, city_name"
-    )
-    datasets = [
-        {"name": "skills", "displayName": "Top 15 skills", "queryLines": [skills_sql]},
-        {"name": "cities", "displayName": "Observed posting dates", "queryLines": [cities_sql]},
-    ]
-    layout = [
+    filtered = ["role_summary", "role_trend", "role_skills", "skill_trend", "role_skill_details"]
+    datasets = [dataset(name) for name in filtered] + [dataset("role_ranking", filtered=False)]
+    datasets.append(
         {
-            "widget": {
+            "name": "role_options",
+            "displayName": "Observed roles",
+            "queryLines": [
+                "SELECT 'All roles' AS role_family UNION ",
+                "SELECT DISTINCT role_family FROM ",
+                "${catalog}.${prefix}_gold.mart_daily_role_demand ",
+                "WHERE posting_count > 0 ORDER BY role_family",
+            ],
+        }
+    )
+    layout = [
+        position(
+            {
                 "name": "description",
                 "multilineTextboxSpec": {
                     "lines": [
-                        "## Vietnam IT Job Market\n\n",
-                        "Source: public ITviec postings. Demand counts postings present in the "
-                        "latest complete snapshot. ",
-                        "Salary is the mean advertised monthly midpoint; "
-                        "NULL indicates insufficient salary data. ",
-                        "The publication-date chart includes only observed postings; "
-                        "a posting may belong to multiple cities.\n\n",
+                        "## Vietnam IT Job Market: roles and skills\n\n",
+                        "Select a role for trends and skills; ranking shows all roles. ",
+                        "Each collected day uses its last complete batch.\n\n",
+                        "Skills are public tags, not full requirements. ",
+                        "Exact role-name tags are excluded. Labels use title rules; ",
+                        "Other and multi-role titles need review. ",
+                        "Short history is not a long-term trend. Source: ITviec. ",
                         "[Rates By Exchange Rate API](https://www.exchangerate-api.com)",
                     ]
                 },
             },
-            "position": {"x": 0, "y": 0, "width": 6, "height": 3},
+            0,
+            0,
+            6,
+            3,
+        )
+    ]
+    filter_queries = [
+        {
+            "name": "role_choices",
+            "query": {
+                "datasetName": "role_options",
+                "fields": [{"name": "role_family", "expression": "`role_family`"}],
+                "disaggregated": False,
+            },
         }
     ]
-    charts = [
-        (
-            "demand",
-            "skills",
-            "bar",
-            "skill_name",
-            "categorical",
-            "job_count",
-            None,
-            "Top 15 skills by posting count",
-            0,
-            3,
-        ),
-        (
-            "trend",
-            "cities",
-            "line",
-            "posted_date",
-            "temporal",
-            "job_count",
-            "city_name",
-            "Observed postings by publication date and city",
-            3,
-            3,
-        ),
-        (
-            "salary",
-            "skills",
-            "bar",
-            "skill_name",
-            "categorical",
-            "avg_salary_usd",
-            None,
-            "Mean advertised salary (USD/month, both bounds required)",
-            0,
-            9,
-        ),
-        (
-            "coverage",
-            "skills",
-            "bar",
-            "skill_name",
-            "categorical",
-            "salary_coverage",
-            None,
-            "Salary midpoint coverage (0–1)",
-            3,
-            9,
-        ),
-    ]
-    for name, dataset, kind, x, scale, y, color, title, left, top in charts:
-        fields = [x, y] + ([color] if color else [])
-        encodings = {
-            "x": {"fieldName": x, "scale": {"type": scale}},
-            "y": {"fieldName": y, "scale": {"type": "quantitative"}},
-        }
-        if color:
-            encodings["color"] = {"fieldName": color, "scale": {"type": "categorical"}}
-        layout.append(
+    bindings = [{"fieldName": "role_family", "displayName": "Role", "queryName": "role_choices"}]
+    for name in filtered:
+        filter_queries.append(
             {
-                "widget": {
-                    "name": name,
-                    "queries": [
-                        {
-                            "name": "main_query",
-                            "query": {
-                                "datasetName": dataset,
-                                "fields": [
-                                    {"name": field, "expression": f"`{field}`"} for field in fields
-                                ],
-                                "disaggregated": True,
-                            },
-                        }
-                    ],
-                    "spec": {
-                        "version": 3,
-                        "widgetType": kind,
-                        "encodings": encodings,
-                        "frame": {"showTitle": True, "title": title},
-                    },
+                "name": "filter_" + name,
+                "query": {
+                    "datasetName": name,
+                    "parameters": [{"name": "role_family", "keyword": "role_family"}],
+                    "disaggregated": False,
                 },
-                "position": {"x": left, "y": top, "width": 3, "height": 6},
             }
         )
+        bindings.append({"parameterName": "role_family", "queryName": "filter_" + name})
+    layout.append(
+        position(
+            {
+                "name": "role_filter",
+                "queries": filter_queries,
+                "spec": {
+                    "version": 2,
+                    "widgetType": "filter-single-select",
+                    "encodings": {"fields": bindings},
+                    "selection": {
+                        "defaultSelection": {
+                            "values": {"dataType": "STRING", "values": [{"value": ALL_ROLES}]}
+                        }
+                    },
+                    "frame": {"showTitle": True, "title": "Role for trend and skill analysis"},
+                },
+            },
+            0,
+            3,
+            6,
+            2,
+        )
+    )
+    layout.extend(
+        [
+            counter("posting_count", "posting_count", "Observed postings - latest snapshot", 0),
+            counter("company_count", "company_count", "Companies - selected role", 2),
+            counter("skill_count", "skill_count", "Skill tags - selected role", 4),
+            table(
+                "snapshot_info",
+                "role_summary",
+                {
+                    "selected_role": "Selected role",
+                    "snapshot_date": "Latest snapshot",
+                    "data_collected_at": "Source collected at (UTC)",
+                    "collected_days": "Collected days",
+                    "unclassified_posts": "Unclassified posts",
+                    "multiple_role_titles": "Multi-role titles",
+                },
+                7,
+                3,
+            ),
+            chart(
+                "role_ranking",
+                "role_ranking",
+                "bar",
+                "posting_count",
+                "role_family",
+                "Top role families - all roles, latest snapshot",
+                0,
+                10,
+            ),
+            chart(
+                "role_trend",
+                "role_trend",
+                "line",
+                "snapshot_date",
+                "posting_count",
+                "Observed role demand - top 6 or selected role",
+                3,
+                10,
+                "role_family",
+            ),
+            chart(
+                "role_skills",
+                "role_skills",
+                "bar",
+                "skill_share_pct",
+                "skill_name",
+                "Top 15 mentioned skills (% of selected role postings)",
+                0,
+                17,
+                extra=("posting_count", "role_posting_count"),
+            ),
+            chart(
+                "skill_trend",
+                "skill_trend",
+                "line",
+                "snapshot_date",
+                "skill_share_pct",
+                "Skill mention share over collected days (%)",
+                3,
+                17,
+                "skill_name",
+                extra=("posting_count", "role_posting_count"),
+            ),
+            table(
+                "role_skill_details",
+                "role_skill_details",
+                {
+                    "role_family": "Role family",
+                    "skill_name": "Skill",
+                    "posting_count": "Postings with skill",
+                    "role_posting_count": "Role postings",
+                    "skill_share_pct": "Share (%)",
+                },
+                24,
+                8,
+            ),
+        ]
+    )
     return {
         "datasets": datasets,
-        "pages": [{"name": "market", "displayName": "Vietnam IT jobs", "layout": layout}],
+        "pages": [
+            {
+                "name": "market",
+                "displayName": "Roles and skills",
+                "pageType": "PAGE_TYPE_CANVAS",
+                "layout": layout,
+            }
+        ],
     }
 
 
 if __name__ == "__main__":
     output = ROOT / "dashboards/market.lvdash.json.tftpl"
-    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(build(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -1,13 +1,13 @@
 # Vietnam IT Job Market Lakehouse
 
-A daily pipeline for IT job data in Vietnam. It collects public posts from ITviec, cleans them, and shows the results on a Databricks dashboard.
+A daily pipeline for IT job data in Vietnam. It collects public ITviec posts and shows role demand and skill tags on a Databricks dashboard.
 
 The main questions are:
 
-- Which 15 skills appear in the most posts in the latest batch?
-- How many observed posts were published each day in Ha Noi, Ho Chi Minh City, and Da Nang?
+- Which role families appear most often, and how do their counts change across collected days?
+- Which skills are mentioned for a selected role, and how does their share change over time?
 
-Salary estimates are included when enough public data is available. Hidden salaries stay `NULL`.
+Choose a role in the dashboard to compare its skills and collected snapshots. Skills come from public tags, not the full list of mandatory requirements. [How role analysis works](docs/role_analysis.md).
 
 ## How it works
 
@@ -56,7 +56,7 @@ See the [runbook](docs/runbook.md) for GitHub setup, WSL login, replay, and repa
 
 The check on **7 November 2026** collected 632 posts from 315 companies. Local tests and the cloud pipeline passed. dbt reported one expected warning because no public salaries could be used for an average. [Test results and links](docs/verification.md).
 
-The project currently uses one source in Vietnam. It does not represent the whole job market. A post can belong to several cities, so adding city counts can count the same post more than once. Databricks Free Edition has usage limits.
+The project uses one source in Vietnam. Role names are assigned by title rules, with unmatched posts kept as `Other`. The history is still short and does not show the whole market. Hidden salaries stay `NULL`. Databricks Free Edition has usage limits.
 
 ## Tests
 

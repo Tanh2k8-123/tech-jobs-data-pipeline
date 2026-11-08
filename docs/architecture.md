@@ -21,7 +21,7 @@ A post is identified by `(source, source_job_id)`. A Bronze row also includes th
 
 Replaying the same batch adds no duplicate observations. A new batch can add another observation of the same post. Bronze writes its run ledger last, and Silver reads only batches listed there.
 
-The fact holds one current record per post. Skill and city bridges handle posts with several skills or locations.
+The fact holds one current record per post. Skill and city bridges handle posts with several skills or locations. A daily fact and snapshot-skill bridge support role trends without replacing past skills with current values. Title rules assign one role family and keep review flags.
 
 ```mermaid
 erDiagram

@@ -1,34 +1,272 @@
 {
   "datasets": [
     {
-      "name": "skills",
-      "displayName": "Top 15 skills",
+      "name": "role_summary",
+      "displayName": "Role Summary",
       "queryLines": [
-        "SELECT skill_name, job_count, avg_salary_usd, salary_sample_count, salary_coverage FROM ${catalog}.${prefix}_gold.mart_skill_demand ORDER BY job_count DESC, skill_name LIMIT 15"
+        "with latest as (\n",
+        "    select max(snapshot_date) as snapshot_date\n",
+        "    from ${catalog}.${prefix}_gold.fct_job_daily_snapshots\n",
+        "), eligible_tags as (\n",
+        "    select b.snapshot_sk, b.skill_sk\n",
+        "    from ${catalog}.${prefix}_gold.bridge_job_snapshot_skills b\n",
+        "    inner join ${catalog}.${prefix}_gold.dim_skills d on b.skill_sk = d.skill_sk\n",
+        "    left join ${catalog}.${prefix}_silver.role_tag_labels r on lower(d.skill_name) = r.skill_name\n",
+        "    where r.skill_name is null\n",
+        ")\n",
+        "select :role_family as selected_role,\n",
+        "    count(distinct f.job_sk) as posting_count,\n",
+        "    count(distinct f.company_sk) as company_count,\n",
+        "    count(distinct t.skill_sk) as skill_count,\n",
+        "    (select snapshot_date from latest) as snapshot_date,\n",
+        "    (select max(collected_at) from ${catalog}.${prefix}_gold.fct_job_daily_snapshots\n",
+        "     where snapshot_date = (select snapshot_date from latest)) as data_collected_at,\n",
+        "    (select count(distinct snapshot_date)\n",
+        "     from ${catalog}.${prefix}_gold.fct_job_daily_snapshots) as collected_days,\n",
+        "    count(distinct case when f.role_classification = 'unclassified' then f.job_sk end)\n",
+        "        as unclassified_posts,\n",
+        "    count(distinct case when f.role_classification = 'multiple_primary_matches' then f.job_sk end)\n",
+        "        as multiple_role_titles\n",
+        "from ${catalog}.${prefix}_gold.fct_job_daily_snapshots f\n",
+        "inner join latest l on f.snapshot_date = l.snapshot_date\n",
+        "left join eligible_tags t on f.snapshot_sk = t.snapshot_sk\n",
+        "where :role_family = 'All roles' or f.role_family = :role_family\n"
+      ],
+      "parameters": [
+        {
+          "keyword": "role_family",
+          "displayName": "Role family",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All roles"
+                }
+              ]
+            }
+          }
+        }
       ]
     },
     {
-      "name": "cities",
-      "displayName": "Observed posting dates",
+      "name": "role_trend",
+      "displayName": "Role Trend",
       "queryLines": [
-        "SELECT posted_date, city_name, job_count FROM ${catalog}.${prefix}_gold.mart_daily_city_jobs ORDER BY posted_date, city_name"
+        "with top_roles as (\n",
+        "    select role_family, sum(posting_count) as latest_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "    where snapshot_date = (\n",
+        "        select max(snapshot_date) from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "    ) and role_family <> 'Other'\n",
+        "    group by role_family\n",
+        "    having sum(posting_count) > 0\n",
+        "    order by latest_count desc, role_family limit 6\n",
+        ")\n",
+        "select snapshot_date, role_family, sum(posting_count) as posting_count\n",
+        "from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "where (:role_family = 'All roles' and role_family in (select role_family from top_roles))\n",
+        "    or role_family = :role_family\n",
+        "group by snapshot_date, role_family\n",
+        "order by snapshot_date, role_family\n"
+      ],
+      "parameters": [
+        {
+          "keyword": "role_family",
+          "displayName": "Role family",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All roles"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "role_skills",
+      "displayName": "Role Skills",
+      "queryLines": [
+        "with total as (\n",
+        "    select sum(posting_count) as role_posting_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "    where snapshot_date = (select max(snapshot_date)\n",
+        "        from ${catalog}.${prefix}_gold.mart_daily_role_demand)\n",
+        "        and (:role_family = 'All roles' or role_family = :role_family)\n",
+        ")\n",
+        "select s.skill_name, sum(s.posting_count) as posting_count,\n",
+        "    max(t.role_posting_count) as role_posting_count,\n",
+        "    round(100.0 * sum(s.posting_count) / max(t.role_posting_count), 1) as skill_share_pct\n",
+        "from ${catalog}.${prefix}_gold.mart_daily_role_skills s cross join total t\n",
+        "where s.snapshot_date = (select max(snapshot_date)\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_demand)\n",
+        "    and (:role_family = 'All roles' or s.role_family = :role_family)\n",
+        "group by s.skill_name\n",
+        "order by posting_count desc, s.skill_name\n",
+        "limit 15\n"
+      ],
+      "parameters": [
+        {
+          "keyword": "role_family",
+          "displayName": "Role family",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All roles"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "skill_trend",
+      "displayName": "Skill Trend",
+      "queryLines": [
+        "with role_counts as (\n",
+        "    select snapshot_date, sum(posting_count) as role_posting_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "    where :role_family = 'All roles' or role_family = :role_family\n",
+        "    group by snapshot_date\n",
+        "), skill_counts as (\n",
+        "    select snapshot_date, skill_name, sum(posting_count) as posting_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_skills\n",
+        "    where :role_family = 'All roles' or role_family = :role_family\n",
+        "    group by snapshot_date, skill_name\n",
+        "), top_skills as (\n",
+        "    select skill_name, posting_count from skill_counts\n",
+        "    where snapshot_date = (select max(snapshot_date) from role_counts)\n",
+        "    order by posting_count desc, skill_name limit 5\n",
+        ")\n",
+        "select r.snapshot_date, t.skill_name,\n",
+        "    coalesce(s.posting_count, 0) as posting_count, r.role_posting_count,\n",
+        "    case when r.role_posting_count > 0 then\n",
+        "        round(100.0 * coalesce(s.posting_count, 0) / r.role_posting_count, 1)\n",
+        "    end as skill_share_pct\n",
+        "from role_counts r cross join top_skills t\n",
+        "left join skill_counts s on r.snapshot_date = s.snapshot_date and t.skill_name = s.skill_name\n",
+        "order by r.snapshot_date, t.skill_name\n"
+      ],
+      "parameters": [
+        {
+          "keyword": "role_family",
+          "displayName": "Role family",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All roles"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "role_skill_details",
+      "displayName": "Role Skill Details",
+      "queryLines": [
+        "with totals as (\n",
+        "    select role_family, sum(posting_count) as role_posting_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "    where snapshot_date = (select max(snapshot_date)\n",
+        "        from ${catalog}.${prefix}_gold.mart_daily_role_demand)\n",
+        "        and (:role_family = 'All roles' or role_family = :role_family)\n",
+        "    group by role_family\n",
+        "), counts as (\n",
+        "    select role_family, skill_name, sum(posting_count) as posting_count\n",
+        "    from ${catalog}.${prefix}_gold.mart_daily_role_skills\n",
+        "    where snapshot_date = (select max(snapshot_date)\n",
+        "        from ${catalog}.${prefix}_gold.mart_daily_role_demand)\n",
+        "        and (:role_family = 'All roles' or role_family = :role_family)\n",
+        "    group by role_family, skill_name\n",
+        "), ranked as (\n",
+        "    select c.*, t.role_posting_count,\n",
+        "        round(100.0 * c.posting_count / t.role_posting_count, 1) as skill_share_pct,\n",
+        "        row_number() over (partition by c.role_family\n",
+        "            order by c.posting_count desc, c.skill_name) as skill_rank\n",
+        "    from counts c inner join totals t on c.role_family = t.role_family\n",
+        ")\n",
+        "select role_family, skill_name, posting_count, role_posting_count, skill_share_pct\n",
+        "from ranked\n",
+        "where skill_rank <= case when :role_family = 'All roles' then 3 else 15 end\n",
+        "order by role_family, skill_rank\n"
+      ],
+      "parameters": [
+        {
+          "keyword": "role_family",
+          "displayName": "Role family",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All roles"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "role_ranking",
+      "displayName": "Role Ranking",
+      "queryLines": [
+        "select role_family, sum(posting_count) as posting_count\n",
+        "from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        "where snapshot_date = (\n",
+        "    select max(snapshot_date) from ${catalog}.${prefix}_gold.mart_daily_role_demand\n",
+        ")\n",
+        "group by role_family\n",
+        "having sum(posting_count) > 0\n",
+        "order by posting_count desc, role_family\n",
+        "limit 15\n"
+      ]
+    },
+    {
+      "name": "role_options",
+      "displayName": "Observed roles",
+      "queryLines": [
+        "SELECT 'All roles' AS role_family UNION ",
+        "SELECT DISTINCT role_family FROM ",
+        "${catalog}.${prefix}_gold.mart_daily_role_demand ",
+        "WHERE posting_count > 0 ORDER BY role_family"
       ]
     }
   ],
   "pages": [
     {
       "name": "market",
-      "displayName": "Vietnam IT jobs",
+      "displayName": "Roles and skills",
+      "pageType": "PAGE_TYPE_CANVAS",
       "layout": [
         {
           "widget": {
             "name": "description",
             "multilineTextboxSpec": {
               "lines": [
-                "## Vietnam IT Job Market\n\n",
-                "Source: public ITviec postings. Demand counts postings present in the latest complete snapshot. ",
-                "Salary is the mean advertised monthly midpoint; NULL indicates insufficient salary data. ",
-                "The publication-date chart includes only observed postings; a posting may belong to multiple cities.\n\n",
+                "## Vietnam IT Job Market: roles and skills\n\n",
+                "Select a role for trends and skills; ranking shows all roles. ",
+                "Each collected day uses its last complete batch.\n\n",
+                "Skills are public tags, not full requirements. ",
+                "Exact role-name tags are excluded. Labels use title rules; ",
+                "Other and multi-role titles need review. ",
+                "Short history is not a long-term trend. Source: ITviec. ",
                 "[Rates By Exchange Rate API](https://www.exchangerate-api.com)"
               ]
             }
@@ -42,20 +280,362 @@
         },
         {
           "widget": {
-            "name": "demand",
+            "name": "role_filter",
+            "queries": [
+              {
+                "name": "role_choices",
+                "query": {
+                  "datasetName": "role_options",
+                  "fields": [
+                    {
+                      "name": "role_family",
+                      "expression": "`role_family`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_role_summary",
+                "query": {
+                  "datasetName": "role_summary",
+                  "parameters": [
+                    {
+                      "name": "role_family",
+                      "keyword": "role_family"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_role_trend",
+                "query": {
+                  "datasetName": "role_trend",
+                  "parameters": [
+                    {
+                      "name": "role_family",
+                      "keyword": "role_family"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_role_skills",
+                "query": {
+                  "datasetName": "role_skills",
+                  "parameters": [
+                    {
+                      "name": "role_family",
+                      "keyword": "role_family"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_skill_trend",
+                "query": {
+                  "datasetName": "skill_trend",
+                  "parameters": [
+                    {
+                      "name": "role_family",
+                      "keyword": "role_family"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_role_skill_details",
+                "query": {
+                  "datasetName": "role_skill_details",
+                  "parameters": [
+                    {
+                      "name": "role_family",
+                      "keyword": "role_family"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "role_family",
+                    "displayName": "Role",
+                    "queryName": "role_choices"
+                  },
+                  {
+                    "parameterName": "role_family",
+                    "queryName": "filter_role_summary"
+                  },
+                  {
+                    "parameterName": "role_family",
+                    "queryName": "filter_role_trend"
+                  },
+                  {
+                    "parameterName": "role_family",
+                    "queryName": "filter_role_skills"
+                  },
+                  {
+                    "parameterName": "role_family",
+                    "queryName": "filter_skill_trend"
+                  },
+                  {
+                    "parameterName": "role_family",
+                    "queryName": "filter_role_skill_details"
+                  }
+                ]
+              },
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "All roles"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Role for trend and skill analysis"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "posting_count",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "skills",
+                  "datasetName": "role_summary",
                   "fields": [
                     {
-                      "name": "skill_name",
-                      "expression": "`skill_name`"
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "posting_count",
+                  "displayName": "Observed postings - latest snapshot"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Observed postings - latest snapshot"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "company_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "role_summary",
+                  "fields": [
+                    {
+                      "name": "company_count",
+                      "expression": "`company_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "company_count",
+                  "displayName": "Companies - selected role"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Companies - selected role"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "skill_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "role_summary",
+                  "fields": [
+                    {
+                      "name": "skill_count",
+                      "expression": "`skill_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "skill_count",
+                  "displayName": "Skill tags - selected role"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Skill tags - selected role"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "snapshot_info",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "role_summary",
+                  "fields": [
+                    {
+                      "name": "selected_role",
+                      "expression": "`selected_role`"
                     },
                     {
-                      "name": "job_count",
-                      "expression": "`job_count`"
+                      "name": "snapshot_date",
+                      "expression": "`snapshot_date`"
+                    },
+                    {
+                      "name": "data_collected_at",
+                      "expression": "`data_collected_at`"
+                    },
+                    {
+                      "name": "collected_days",
+                      "expression": "`collected_days`"
+                    },
+                    {
+                      "name": "unclassified_posts",
+                      "expression": "`unclassified_posts`"
+                    },
+                    {
+                      "name": "multiple_role_titles",
+                      "expression": "`multiple_role_titles`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "selected_role",
+                    "displayName": "Selected role"
+                  },
+                  {
+                    "fieldName": "snapshot_date",
+                    "displayName": "Latest snapshot"
+                  },
+                  {
+                    "fieldName": "data_collected_at",
+                    "displayName": "Source collected at (UTC)"
+                  },
+                  {
+                    "fieldName": "collected_days",
+                    "displayName": "Collected days"
+                  },
+                  {
+                    "fieldName": "unclassified_posts",
+                    "displayName": "Unclassified posts"
+                  },
+                  {
+                    "fieldName": "multiple_role_titles",
+                    "displayName": "Multi-role titles"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Snapshot details"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "role_ranking",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "role_ranking",
+                  "fields": [
+                    {
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
+                    },
+                    {
+                      "name": "role_family",
+                      "expression": "`role_family`"
                     }
                   ],
                   "disaggregated": true
@@ -67,51 +647,56 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "skill_name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "y": {
-                  "fieldName": "job_count",
+                  "fieldName": "posting_count",
                   "scale": {
                     "type": "quantitative"
-                  }
+                  },
+                  "displayName": "Observed postings"
+                },
+                "y": {
+                  "fieldName": "role_family",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "value"
+                    }
+                  },
+                  "displayName": "Role family"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Top 15 skills by posting count"
+                "title": "Top role families - all roles, latest snapshot"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 3,
+            "y": 10,
             "width": 3,
-            "height": 6
+            "height": 7
           }
         },
         {
           "widget": {
-            "name": "trend",
+            "name": "role_trend",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "cities",
+                  "datasetName": "role_trend",
                   "fields": [
                     {
-                      "name": "posted_date",
-                      "expression": "`posted_date`"
+                      "name": "snapshot_date",
+                      "expression": "`snapshot_date`"
                     },
                     {
-                      "name": "job_count",
-                      "expression": "`job_count`"
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
                     },
                     {
-                      "name": "city_name",
-                      "expression": "`city_name`"
+                      "name": "role_family",
+                      "expression": "`role_family`"
                     }
                   ],
                   "disaggregated": true
@@ -123,53 +708,64 @@
               "widgetType": "line",
               "encodings": {
                 "x": {
-                  "fieldName": "posted_date",
+                  "fieldName": "snapshot_date",
                   "scale": {
                     "type": "temporal"
-                  }
+                  },
+                  "displayName": "Collected day"
                 },
                 "y": {
-                  "fieldName": "job_count",
+                  "fieldName": "posting_count",
                   "scale": {
                     "type": "quantitative"
-                  }
+                  },
+                  "displayName": "Observed postings"
                 },
                 "color": {
-                  "fieldName": "city_name",
+                  "fieldName": "role_family",
                   "scale": {
                     "type": "categorical"
-                  }
+                  },
+                  "displayName": "Role family"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Observed postings by publication date and city"
+                "title": "Observed role demand - top 6 or selected role"
               }
             }
           },
           "position": {
             "x": 3,
-            "y": 3,
+            "y": 10,
             "width": 3,
-            "height": 6
+            "height": 7
           }
         },
         {
           "widget": {
-            "name": "salary",
+            "name": "role_skills",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "skills",
+                  "datasetName": "role_skills",
                   "fields": [
+                    {
+                      "name": "skill_share_pct",
+                      "expression": "`skill_share_pct`"
+                    },
                     {
                       "name": "skill_name",
                       "expression": "`skill_name`"
                     },
                     {
-                      "name": "avg_salary_usd",
-                      "expression": "`avg_salary_usd`"
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
+                    },
+                    {
+                      "name": "role_posting_count",
+                      "expression": "`role_posting_count`"
                     }
                   ],
                   "disaggregated": true
@@ -181,47 +777,74 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "skill_name",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "y": {
-                  "fieldName": "avg_salary_usd",
+                  "fieldName": "skill_share_pct",
                   "scale": {
                     "type": "quantitative"
+                  },
+                  "displayName": "Posts mentioning skill (%)"
+                },
+                "y": {
+                  "fieldName": "skill_name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "value"
+                    }
+                  },
+                  "displayName": "Skill"
+                },
+                "extra": [
+                  {
+                    "fieldName": "posting_count",
+                    "displayName": "Posting Count"
+                  },
+                  {
+                    "fieldName": "role_posting_count",
+                    "displayName": "Role Posting Count"
                   }
-                }
+                ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Mean advertised salary (USD/month, both bounds required)"
+                "title": "Top 15 mentioned skills (% of selected role postings)"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 9,
+            "y": 17,
             "width": 3,
-            "height": 6
+            "height": 7
           }
         },
         {
           "widget": {
-            "name": "coverage",
+            "name": "skill_trend",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "skills",
+                  "datasetName": "skill_trend",
                   "fields": [
+                    {
+                      "name": "snapshot_date",
+                      "expression": "`snapshot_date`"
+                    },
+                    {
+                      "name": "skill_share_pct",
+                      "expression": "`skill_share_pct`"
+                    },
                     {
                       "name": "skill_name",
                       "expression": "`skill_name`"
                     },
                     {
-                      "name": "salary_coverage",
-                      "expression": "`salary_coverage`"
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
+                    },
+                    {
+                      "name": "role_posting_count",
+                      "expression": "`role_posting_count`"
                     }
                   ],
                   "disaggregated": true
@@ -230,32 +853,125 @@
             ],
             "spec": {
               "version": 3,
-              "widgetType": "bar",
+              "widgetType": "line",
               "encodings": {
                 "x": {
+                  "fieldName": "snapshot_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Collected day"
+                },
+                "y": {
+                  "fieldName": "skill_share_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Posts mentioning skill (%)"
+                },
+                "color": {
                   "fieldName": "skill_name",
                   "scale": {
                     "type": "categorical"
-                  }
+                  },
+                  "displayName": "Skill"
                 },
-                "y": {
-                  "fieldName": "salary_coverage",
-                  "scale": {
-                    "type": "quantitative"
+                "extra": [
+                  {
+                    "fieldName": "posting_count",
+                    "displayName": "Posting Count"
+                  },
+                  {
+                    "fieldName": "role_posting_count",
+                    "displayName": "Role Posting Count"
                   }
-                }
+                ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Salary midpoint coverage (0–1)"
+                "title": "Skill mention share over collected days (%)"
               }
             }
           },
           "position": {
             "x": 3,
-            "y": 9,
+            "y": 17,
             "width": 3,
-            "height": 6
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "role_skill_details",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "role_skill_details",
+                  "fields": [
+                    {
+                      "name": "role_family",
+                      "expression": "`role_family`"
+                    },
+                    {
+                      "name": "skill_name",
+                      "expression": "`skill_name`"
+                    },
+                    {
+                      "name": "posting_count",
+                      "expression": "`posting_count`"
+                    },
+                    {
+                      "name": "role_posting_count",
+                      "expression": "`role_posting_count`"
+                    },
+                    {
+                      "name": "skill_share_pct",
+                      "expression": "`skill_share_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "role_family",
+                    "displayName": "Role family"
+                  },
+                  {
+                    "fieldName": "skill_name",
+                    "displayName": "Skill"
+                  },
+                  {
+                    "fieldName": "posting_count",
+                    "displayName": "Postings with skill"
+                  },
+                  {
+                    "fieldName": "role_posting_count",
+                    "displayName": "Role postings"
+                  },
+                  {
+                    "fieldName": "skill_share_pct",
+                    "displayName": "Share (%)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Skills mentioned in postings by role"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 6,
+            "height": 8
           }
         }
       ]

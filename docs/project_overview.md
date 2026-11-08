@@ -2,7 +2,7 @@
 
 This project follows the path from public job pages to a dashboard. It is a way to practice data collection, SQL modeling, testing, and cloud deployment in one project.
 
-It collects ITviec posts each day and reports skill demand and posting counts by city. The current scope is Vietnam. Other sources and Singapore are possible future additions.
+It collects ITviec posts each day and reports role counts and skill mentions by role. The current scope is Vietnam. Other sources and Singapore are possible future additions.
 
 ## Main choices
 

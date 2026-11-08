@@ -5,7 +5,7 @@ with ranked as (
         row_number() over (
             partition by job_sk order by ingested_at desc, run_id desc
         ) as observation_rank
-    from {{ ref('stg_job_history') }}
+    from {{ ref('int_job_role_history') }}
 ), latest_runs as (
     select source, run_id,
         row_number() over (partition by source order by completed_at desc, run_id desc) as run_rank
